@@ -19,6 +19,17 @@ export const patchTree = (id: string, tree: TreeNode): Promise<unknown> =>
 export const generate = (id: string): Promise<unknown> =>
   fetch(`/projects/${id}/generate`, { method: 'POST' }).then((r) => r.json());
 
+export type LoginStartResponse =
+  | { status: 'logged_in' }
+  | { status: 'pending'; url: string; code: string }
+  | { error: string };
+
+export const startLogin = (id: string): Promise<LoginStartResponse> =>
+  fetch(`/projects/${id}/login/start`, { method: 'POST' }).then((r) => r.json());
+
+export const getLoginStatus = (id: string): Promise<{ loggedIn: boolean }> =>
+  fetch(`/projects/${id}/login/status`).then((r) => r.json());
+
 export const openStream = (id: string, onEvent: (sse: ServerSentEvent) => void): EventSource => {
   const es = new EventSource(`/projects/${id}/stream`);
   es.onmessage = (e) => {

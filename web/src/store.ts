@@ -13,6 +13,8 @@ type State = {
   previewKey: number;
   events: EventLogItem[];
   generating: boolean;
+  codexConnected: boolean;
+  loginModalOpen: boolean;
 
   setProject: (p: Project) => void;
   select: (id: string) => void;
@@ -24,6 +26,8 @@ type State = {
   setPreviewUrl: (url: string) => void;
   appendEvent: (e: EventLogItem['event']) => void;
   setGenerating: (g: boolean) => void;
+  setCodexConnected: (c: boolean) => void;
+  setLoginModalOpen: (o: boolean) => void;
 };
 
 let eid = 0;
@@ -36,8 +40,10 @@ export const useApp = create<State>((set, get) => ({
   previewKey: 0,
   events: [],
   generating: false,
+  codexConnected: false,
+  loginModalOpen: false,
 
-  setProject: (p) => set({ project: p, tree: p.tree, previewUrl: p.previewUrl, selectedNodeId: ROOT_NODE_ID }),
+  setProject: (p) => set({ project: p, tree: p.tree, previewUrl: p.previewUrl, selectedNodeId: ROOT_NODE_ID, codexConnected: false }),
   select: (id) => set({ selectedNodeId: id }),
   applyAddChild: (parentId) => {
     const tree = get().tree;
@@ -66,4 +72,6 @@ export const useApp = create<State>((set, get) => ({
   setPreviewUrl: (url) => set({ previewUrl: url }),
   appendEvent: (event) => set((s) => ({ events: [...s.events.slice(-300), { id: ++eid, ts: Date.now(), event }] })),
   setGenerating: (g) => set({ generating: g }),
+  setCodexConnected: (c) => set({ codexConnected: c }),
+  setLoginModalOpen: (o) => set({ loginModalOpen: o }),
 }));

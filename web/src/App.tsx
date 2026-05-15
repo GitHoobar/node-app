@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Play } from 'lucide-react';
-import { createProject, generate, listProjects, openStream, patchTree } from './api';
+import { Play, Plug } from 'lucide-react';
+import { createProject, generate, getLoginStatus, listProjects, openStream, patchTree } from './api';
 import { useApp } from './store';
 import { TreeEditor } from './components/TreeEditor';
 import { NodeInspector } from './components/NodeInspector';
 import { Preview } from './components/Preview';
 import { EventLog } from './components/EventLog';
+import { ConnectCodex } from './components/ConnectCodex';
 
 export const App = () => {
   const project = useApp((s) => s.project);
@@ -16,6 +17,10 @@ export const App = () => {
   const appendEvent = useApp((s) => s.appendEvent);
   const setGenerating = useApp((s) => s.setGenerating);
   const generating = useApp((s) => s.generating);
+  const codexConnected = useApp((s) => s.codexConnected);
+  const setCodexConnected = useApp((s) => s.setCodexConnected);
+  const loginModalOpen = useApp((s) => s.loginModalOpen);
+  const setLoginModalOpen = useApp((s) => s.setLoginModalOpen);
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -24,6 +29,14 @@ export const App = () => {
       if (first) setProject(first);
     });
   }, [setProject]);
+
+  useEffect(() => {
+    if (!project) return;
+    setCodexConnected(false);
+    getLoginStatus(project.id)
+      .then((s) => setCodexConnected(s.loggedIn))
+      .catch(() => setCodexConnected(false));
+  }, [project, setCodexConnected]);
 
   useEffect(() => {
     if (!project) return;
@@ -63,6 +76,10 @@ export const App = () => {
 
   const onGenerate = async () => {
     if (!project) return;
+    if (!codexConnected) {
+      setLoginModalOpen(true);
+      return;
+    }
     setGenerating(true);
     await generate(project.id);
   };
@@ -85,13 +102,26 @@ export const App = () => {
             </button>
           )}
           {project && (
-            <button
-              onClick={onGenerate}
-              disabled={generating}
-              className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-xs font-medium hover:bg-emerald-500 disabled:opacity-50"
-            >
-              <Play size={12} /> {generating ? 'generating…' : 'Generate'}
-            </button>
+            <>
+              <button
+                onClick={() => setLoginModalOpen(true)}
+                className={
+                  'flex items-center gap-1 rounded border px-3 py-1 text-xs font-medium ' +
+                  (codexConnected
+                    ? 'border-emerald-800 bg-emerald-950/40 text-emerald-300'
+                    : 'border-amber-700 bg-amber-950/40 text-amber-300 hover:bg-amber-950')
+                }
+              >
+                <Plug size={12} /> {codexConnected ? 'Codex connected' : 'Connect Codex'}
+              </button>
+              <button
+                onClick={onGenerate}
+                disabled={generating}
+                className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-xs font-medium hover:bg-emerald-500 disabled:opacity-50"
+              >
+                <Play size={12} /> {generating ? 'generating…' : 'Generate'}
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -113,6 +143,16 @@ export const App = () => {
       <section className="col-start-2 row-start-3 border-t border-zinc-900 bg-zinc-950">
         <EventLog />
       </section>
+
+      {project && loginModalOpen && (
+        <ConnectCodex
+          projectId={project.id}
+          onConnected={() => {
+            setCodexConnected(true);
+          }}
+          onClose={() => setLoginModalOpen(false)}
+        />
+      )}
     </div>
   );
 };

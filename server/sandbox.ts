@@ -1,5 +1,6 @@
 import { Sandbox } from 'e2b';
 import { env } from './env.ts';
+import { isLoggedIn } from './codex-auth.ts';
 
 const CODEX_PORT = 4500;
 const PREVIEW_PORT = 3000;
@@ -11,15 +12,15 @@ export type SandboxHandles = {
   codexWsUrl: string;
 };
 
-const startCodexAppServer = async (sandbox: Sandbox, token: string): Promise<void> => {
+export const ensureCodexAppServer = async (sandbox: Sandbox, token: string): Promise<void> => {
+  if (!(await isLoggedIn(sandbox))) {
+    throw new Error('codex_not_authenticated');
+  }
   await sandbox.commands.run(
     `pgrep -f 'codex app-server' > /dev/null || nohup codex app-server --listen ws://0.0.0.0:${CODEX_PORT} > /tmp/codex-app-server.log 2>&1 &`,
     {
       background: true,
-      envs: {
-        OPENAI_API_KEY: env.openaiApiKey,
-        CODEX_APP_SERVER_TOKEN: token,
-      },
+      envs: { CODEX_APP_SERVER_TOKEN: token },
     },
   );
   await waitForPort(sandbox, CODEX_PORT, 30_000);
@@ -38,12 +39,11 @@ const waitForPort = async (sandbox: Sandbox, port: number, timeoutMs: number): P
 const toHttps = (host: string) => (host.startsWith('http') ? host : `https://${host}`);
 const toWss = (host: string) => (host.startsWith('ws') ? host : `wss://${host}`);
 
-export const createSandboxForProject = async (token: string): Promise<SandboxHandles> => {
+export const createSandboxForProject = async (): Promise<SandboxHandles> => {
   const sandbox = await Sandbox.create(env.e2bTemplateId, {
     apiKey: env.e2bApiKey,
     timeoutMs: SANDBOX_TIMEOUT_MS,
   });
-  await startCodexAppServer(sandbox, token);
   return {
     sandbox,
     previewUrl: toHttps(sandbox.getHost(PREVIEW_PORT)),
@@ -51,10 +51,9 @@ export const createSandboxForProject = async (token: string): Promise<SandboxHan
   };
 };
 
-export const connectSandbox = async (sandboxId: string, token: string): Promise<SandboxHandles> => {
+export const connectSandbox = async (sandboxId: string): Promise<SandboxHandles> => {
   const sandbox = await Sandbox.connect(sandboxId, { apiKey: env.e2bApiKey });
   await sandbox.setTimeout(SANDBOX_TIMEOUT_MS);
-  await startCodexAppServer(sandbox, token);
   return {
     sandbox,
     previewUrl: toHttps(sandbox.getHost(PREVIEW_PORT)),

@@ -17,13 +17,17 @@ export const generateRouter = new Hono()
     queueMicrotask(async () => {
       try {
         const session = await getSession(id);
+        if (!session.codex) {
+          publish(id, { kind: 'log', level: 'error', message: 'codex not connected — sign in with ChatGPT first' });
+          return;
+        }
         let threadId = p.codexThreadId;
         if (!threadId) {
           threadId = await session.codex.createThread('/home/user');
           projects.setThreadId(id, threadId);
         } else {
           await session.codex.resumeThread(threadId).catch(async () => {
-            threadId = await session.codex.createThread('/home/user');
+            threadId = await session.codex!.createThread('/home/user');
             projects.setThreadId(id, threadId!);
           });
         }

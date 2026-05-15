@@ -2,18 +2,12 @@ import type { Sandbox } from 'e2b';
 
 const MARKER = '/home/user/.node-app-bootstrapped';
 const LOG = '/tmp/node-app-bootstrap.log';
+const SCRIPT = '/tmp/node-app-bootstrap.sh';
 
 const exists = async (sandbox: Sandbox, path: string): Promise<boolean> => {
   const r = await sandbox.commands.run(`test -e "${path}" && echo yes || echo no`);
   return r.stdout.trim() === 'yes';
 };
-
-const have = async (sandbox: Sandbox, binary: string): Promise<boolean> => {
-  const r = await sandbox.commands.run(`bash -lc 'export PATH="$HOME/.bun/bin:$PATH"; command -v ${binary}'`);
-  return r.stdout.trim().length > 0;
-};
-
-const SHELL_PRELUDE = `export PATH="$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"`;
 
 const PACKAGE_JSON = JSON.stringify(
   {
@@ -135,6 +129,88 @@ const FILES: Record<string, string> = {
   '/home/user/app/globals.css': APP_GLOBALS_CSS,
 };
 
+const BOOTSTRAP_SCRIPT = `#!/usr/bin/env bash
+set -euo pipefail
+export PATH="$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+exec > >(tee -a ${LOG}) 2>&1
+echo "===== bootstrap $(date -Iseconds) ====="
+
+echo ">> cleaning /home/user (preserve caches)"
+cd /home/user
+shopt -s extglob dotglob
+rm -rf !(.bun|.npm|.config|.cache|.bashrc|.bash_logout|.profile|.)
+shopt -u extglob dotglob
+
+if ! command -v bun >/dev/null; then
+  echo ">> install bun"
+  curl -fsSL https://bun.sh/install | bash
+  export PATH="$HOME/.bun/bin:$PATH"
+fi
+echo "bun: $(bun --version)"
+
+if ! command -v codex >/dev/null; then
+  echo ">> install codex CLI"
+  npm i -g @openai/codex
+fi
+echo "codex: $(codex --version 2>/dev/null || echo missing)"
+`;
+
+const POST_FILES_SCRIPT = `#!/usr/bin/env bash
+set -euo pipefail
+export PATH="$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+exec >> ${LOG} 2>&1
+echo ">> bun install"
+cd /home/user
+bun install
+echo ">> git init"
+git init -q || true
+git add -A
+git -c user.email=bot@local -c user.name=bot commit -q -m init || true
+echo ">> done"
+touch ${MARKER}
+`;
+
+const runScript = async (
+  sandbox: Sandbox,
+  script: string,
+  onLog: (line: string) => void,
+  timeoutMs: number,
+): Promise<void> => {
+  await sandbox.files.write(SCRIPT, script);
+  await sandbox.commands.run(`chmod +x ${SCRIPT}`);
+
+  // start in background, tail the log for progress
+  await sandbox.commands.run(`nohup bash ${SCRIPT} > /dev/null 2>&1 &`, { background: true });
+
+  // tail log lines until the marker shows up OR the script exits
+  const deadline = Date.now() + timeoutMs;
+  let lastSize = 0;
+  let seenDone = false;
+  while (Date.now() < deadline) {
+    const r = await sandbox.commands.run(`wc -c < ${LOG} 2>/dev/null || echo 0`);
+    const size = Number(r.stdout.trim()) || 0;
+    if (size > lastSize) {
+      const chunk = await sandbox.commands.run(`tail -c +${lastSize + 1} ${LOG} | head -c 8192`);
+      for (const line of chunk.stdout.split('\n')) {
+        if (line.trim()) onLog(line);
+        if (line.includes('>> done')) seenDone = true;
+      }
+      lastSize = size;
+    }
+    if (seenDone) return;
+    // check if script process is still alive
+    const alive = await sandbox.commands.run(`pgrep -f 'bash ${SCRIPT}' >/dev/null && echo y || echo n`);
+    if (alive.stdout.trim() === 'n' && !seenDone) {
+      // process exited; one last log flush
+      const final = await sandbox.commands.run(`tail -c +${lastSize + 1} ${LOG}`);
+      for (const line of final.stdout.split('\n')) if (line.trim()) onLog(line);
+      throw new Error('bootstrap script exited without writing >> done marker');
+    }
+    await Bun.sleep(1000);
+  }
+  throw new Error(`bootstrap timed out after ${timeoutMs / 1000}s`);
+};
+
 export const ensureBootstrapped = async (
   sandbox: Sandbox,
   onLog: (line: string) => void,
@@ -145,49 +221,24 @@ export const ensureBootstrapped = async (
   }
   onLog('bootstrapping sandbox (one-time, ~2-3 min)…');
 
-  await sandbox.commands.run("pkill -f 'bun create' 2>/dev/null; pkill -f 'shadcn' 2>/dev/null; pkill -f 'create-next-app' 2>/dev/null; true");
-
-  const step = async (label: string, cmd: string, timeoutSec = 300): Promise<void> => {
-    onLog(`▸ ${label}`);
-    const res = await sandbox.commands.run(
-      `bash -lc '${SHELL_PRELUDE}; { ${cmd}; } >> ${LOG} 2>&1'`,
-      { timeoutMs: timeoutSec * 1000 },
-    );
-    if (res.exitCode !== 0) {
-      const tail = await sandbox.commands.run(`tail -50 ${LOG} || true`);
-      throw new Error(`bootstrap step failed (${label}, exit=${res.exitCode}): ${tail.stdout}`);
-    }
-  };
-
-  // wipe any residue from prior failed runs but keep .bun / .npm caches
-  await step(
-    'clean /home/user (preserve caches)',
-    "cd /home/user && find . -mindepth 1 -maxdepth 1 ! -name '.bun' ! -name '.npm' ! -name '.config' ! -name '.cache' ! -name '.bashrc' ! -name '.bash_logout' ! -name '.profile' -exec rm -rf {} +",
-    60,
+  // kill anything that might be hanging from a prior run
+  await sandbox.commands.run(
+    "pkill -f 'bun create' 2>/dev/null; pkill -f 'shadcn' 2>/dev/null; pkill -f 'create-next-app' 2>/dev/null; pkill -f 'node-app-bootstrap' 2>/dev/null; true",
   );
+  await sandbox.commands.run(`rm -f ${LOG}`);
 
-  if (!(await have(sandbox, 'bun'))) {
-    await step('install bun', 'curl -fsSL https://bun.sh/install | bash', 180);
-  } else {
-    onLog('▸ bun already installed');
-  }
+  // phase 1: clean + install bun + install codex
+  await runScript(sandbox, BOOTSTRAP_SCRIPT, onLog, 5 * 60_000);
 
-  if (!(await have(sandbox, 'codex'))) {
-    await step('install codex CLI', 'npm i -g @openai/codex', 180);
-  } else {
-    onLog('▸ codex already installed');
-  }
-
+  // phase 2: write scaffold files
   onLog('▸ writing Next.js scaffold');
-  await sandbox.files.write('/home/user/app/.gitkeep', '');
   for (const [path, content] of Object.entries(FILES)) {
     await sandbox.files.write(path, content);
   }
 
-  await step('bun install', 'cd /home/user && bun install', 240);
-  await step('git init', "cd /home/user && git init -q && git add -A && git -c user.email=bot@local -c user.name=bot commit -q -m init", 30);
+  // phase 3: bun install + git init + mark
+  await runScript(sandbox, POST_FILES_SCRIPT, onLog, 5 * 60_000);
 
-  await step('mark bootstrapped', `touch ${MARKER}`, 10);
   await ensureDevServer(sandbox, onLog);
 };
 
@@ -202,11 +253,11 @@ const ensureDevServer = async (sandbox: Sandbox, onLog: (line: string) => void):
 
   onLog('▸ starting next dev on :3000');
   await sandbox.commands.run(
-    `bash -lc '${SHELL_PRELUDE}; cd /home/user && nohup bun --bun run dev > /tmp/next-dev.log 2>&1 &'`,
+    `bash -lc 'export PATH="$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"; cd /home/user && nohup bun --bun run dev > /tmp/next-dev.log 2>&1 &'`,
     { background: true },
   );
 
-  const deadline = Date.now() + 90_000;
+  const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
     const r = await sandbox.commands.run(
       `bash -c "exec 3<>/dev/tcp/127.0.0.1/3000 && echo up" 2>/dev/null || true`,
@@ -215,8 +266,8 @@ const ensureDevServer = async (sandbox: Sandbox, onLog: (line: string) => void):
       onLog('▸ dev server ready');
       return;
     }
-    await Bun.sleep(750);
+    await Bun.sleep(1000);
   }
-  const tail = await sandbox.commands.run('tail -30 /tmp/next-dev.log || true');
-  throw new Error(`next dev did not start within 90s. log tail:\n${tail.stdout}`);
+  const tail = await sandbox.commands.run('tail -40 /tmp/next-dev.log || true');
+  throw new Error(`next dev did not start within 120s. log tail:\n${tail.stdout}`);
 };

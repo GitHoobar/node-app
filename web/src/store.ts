@@ -5,6 +5,8 @@ import { addChild, deleteNode, reparent, updateNode } from './lib/tree-ops';
 
 type EventLogItem = { id: number; ts: number; event: CodexEvent | { type: 'log'; level: string; message: string } };
 
+type BootstrapPhase = 'unknown' | 'pending' | 'done' | 'failed';
+
 type State = {
   project: Project | null;
   tree: TreeNode | null;
@@ -15,6 +17,7 @@ type State = {
   generating: boolean;
   codexConnected: boolean;
   loginModalOpen: boolean;
+  bootstrap: BootstrapPhase;
 
   setProject: (p: Project) => void;
   select: (id: string) => void;
@@ -28,6 +31,7 @@ type State = {
   setGenerating: (g: boolean) => void;
   setCodexConnected: (c: boolean) => void;
   setLoginModalOpen: (o: boolean) => void;
+  setBootstrap: (b: BootstrapPhase) => void;
 };
 
 let eid = 0;
@@ -42,8 +46,9 @@ export const useApp = create<State>((set, get) => ({
   generating: false,
   codexConnected: false,
   loginModalOpen: false,
+  bootstrap: 'unknown',
 
-  setProject: (p) => set({ project: p, tree: p.tree, previewUrl: p.previewUrl, selectedNodeId: ROOT_NODE_ID, codexConnected: false }),
+  setProject: (p) => set({ project: p, tree: p.tree, previewUrl: p.previewUrl, selectedNodeId: ROOT_NODE_ID, codexConnected: false, bootstrap: 'unknown' }),
   select: (id) => set({ selectedNodeId: id }),
   applyAddChild: (parentId) => {
     const tree = get().tree;
@@ -74,4 +79,5 @@ export const useApp = create<State>((set, get) => ({
   setGenerating: (g) => set({ generating: g }),
   setCodexConnected: (c) => set({ codexConnected: c }),
   setLoginModalOpen: (o) => set({ loginModalOpen: o }),
+  setBootstrap: (b) => set({ bootstrap: b }),
 }));

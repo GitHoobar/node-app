@@ -68,22 +68,33 @@ export const connectSandbox = async (sandboxId: string): Promise<SandboxHandles>
 };
 
 const bootstrapInflight = new Map<string, Promise<void>>();
+const bootstrapDone = new Set<string>();
+
+export const isBootstrapDone = (projectId: string): boolean => bootstrapDone.has(projectId);
 
 export const ensureBootstrapForProject = (sandbox: Sandbox, projectId: string): Promise<void> => {
+  if (bootstrapDone.has(projectId)) return Promise.resolve();
   const cached = bootstrapInflight.get(projectId);
   if (cached) return cached;
+  publish(projectId, { kind: 'bootstrap.started' });
   const p = ensureBootstrapped(sandbox, (line) =>
     publish(projectId, { kind: 'log', level: 'info', message: line }),
-  );
+  )
+    .then(() => {
+      bootstrapDone.add(projectId);
+      publish(projectId, { kind: 'bootstrap.done' });
+    })
+    .catch((e) => {
+      publish(projectId, { kind: 'bootstrap.failed', message: String(e) });
+      throw e;
+    });
   bootstrapInflight.set(projectId, p);
   p.catch(() => undefined).finally(() => bootstrapInflight.delete(projectId));
   return p;
 };
 
 export const bootstrapInBackground = (sandbox: Sandbox, projectId: string): void => {
-  ensureBootstrapForProject(sandbox, projectId).catch((e) =>
-    publish(projectId, { kind: 'log', level: 'error', message: `bootstrap failed: ${String(e)}` }),
-  );
+  ensureBootstrapForProject(sandbox, projectId).catch(() => undefined);
 };
 
 export const mintCapabilityToken = (): string => crypto.randomUUID().replace(/-/g, '');

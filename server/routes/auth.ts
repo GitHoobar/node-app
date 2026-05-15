@@ -2,12 +2,14 @@ import { Hono } from 'hono';
 import { projects } from '../db.ts';
 import { getSession, refreshCodex } from '../sessions.ts';
 import { startDeviceLogin, isLoggedIn, stopDeviceLogin } from '../codex-auth.ts';
+import { isBootstrapDone } from '../sandbox.ts';
 import { publish } from '../bus.ts';
 
 export const authRouter = new Hono()
   .post('/:id/login/start', async (c) => {
     const id = c.req.param('id');
     if (!projects.get(id)) return c.json({ error: 'not_found' }, 404);
+    if (!isBootstrapDone(id)) return c.json({ error: 'bootstrap_pending' }, 425);
     try {
       const { sandbox } = await getSession(id);
       if (await isLoggedIn(sandbox)) return c.json({ status: 'logged_in' });

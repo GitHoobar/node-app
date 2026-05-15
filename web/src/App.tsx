@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Play, Plug } from 'lucide-react';
-import { createProject, generate, getLoginStatus, listProjects, openStream, patchTree } from './api';
+import { createProject, generate, getLoginStatus, getPreviewReady, listProjects, openStream, patchTree } from './api';
 import { useApp } from './store';
 import { TreeEditor } from './components/TreeEditor';
 import { NodeInspector } from './components/NodeInspector';
@@ -21,6 +21,8 @@ export const App = () => {
   const setCodexConnected = useApp((s) => s.setCodexConnected);
   const loginModalOpen = useApp((s) => s.loginModalOpen);
   const setLoginModalOpen = useApp((s) => s.setLoginModalOpen);
+  const bootstrap = useApp((s) => s.bootstrap);
+  const setBootstrap = useApp((s) => s.setBootstrap);
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -33,10 +35,24 @@ export const App = () => {
   useEffect(() => {
     if (!project) return;
     setCodexConnected(false);
-    getLoginStatus(project.id)
-      .then((s) => setCodexConnected(s.loggedIn))
-      .catch(() => setCodexConnected(false));
-  }, [project, setCodexConnected]);
+    let stopped = false;
+    const poll = async () => {
+      if (stopped) return;
+      const r = await getPreviewReady(project.id);
+      if (r.ready) {
+        setBootstrap('done');
+        getLoginStatus(project.id)
+          .then((s) => setCodexConnected(s.loggedIn))
+          .catch(() => {});
+        return;
+      }
+      setTimeout(poll, 3000);
+    };
+    poll();
+    return () => {
+      stopped = true;
+    };
+  }, [project, setCodexConnected, setBootstrap]);
 
   useEffect(() => {
     if (!project) return;
@@ -50,6 +66,14 @@ export const App = () => {
         if (sse.event.type === 'turn.failed') setGenerating(false);
       } else if (sse.kind === 'log') {
         appendEvent({ type: 'log', level: sse.level, message: sse.message } as any);
+      } else if (sse.kind === 'bootstrap.started') {
+        setBootstrap('pending');
+      } else if (sse.kind === 'bootstrap.done') {
+        setBootstrap('done');
+        bumpPreview();
+      } else if (sse.kind === 'bootstrap.failed') {
+        setBootstrap('failed');
+        appendEvent({ type: 'error', message: `bootstrap failed: ${sse.message}` } as any);
       }
     });
     return () => es.close();
@@ -76,6 +100,7 @@ export const App = () => {
 
   const onGenerate = async () => {
     if (!project) return;
+    if (bootstrap !== 'done') return;
     if (!codexConnected) {
       setLoginModalOpen(true);
       return;
@@ -83,6 +108,8 @@ export const App = () => {
     setGenerating(true);
     await generate(project.id);
   };
+
+  const sandboxReady = bootstrap === 'done';
 
   return (
     <div className="grid h-full grid-cols-[320px_1fr_380px] grid-rows-[44px_1fr_180px]">
@@ -103,10 +130,16 @@ export const App = () => {
           )}
           {project && (
             <>
+              {!sandboxReady && (
+                <div className="rounded border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-400">
+                  {bootstrap === 'failed' ? 'sandbox setup failed' : 'setting up sandbox…'}
+                </div>
+              )}
               <button
                 onClick={() => setLoginModalOpen(true)}
+                disabled={!sandboxReady}
                 className={
-                  'flex items-center gap-1 rounded border px-3 py-1 text-xs font-medium ' +
+                  'flex items-center gap-1 rounded border px-3 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40 ' +
                   (codexConnected
                     ? 'border-emerald-800 bg-emerald-950/40 text-emerald-300'
                     : 'border-amber-700 bg-amber-950/40 text-amber-300 hover:bg-amber-950')
@@ -116,8 +149,8 @@ export const App = () => {
               </button>
               <button
                 onClick={onGenerate}
-                disabled={generating}
-                className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-xs font-medium hover:bg-emerald-500 disabled:opacity-50"
+                disabled={generating || !sandboxReady}
+                className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-xs font-medium hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Play size={12} /> {generating ? 'generating…' : 'Generate'}
               </button>

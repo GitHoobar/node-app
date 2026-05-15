@@ -1,8 +1,10 @@
-import { useMemo, useCallback } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import ReactFlow, {
   Background,
   Controls,
   ReactFlowProvider,
+  useEdgesState,
+  useNodesState,
   useReactFlow,
   type Node,
   type NodeMouseHandler,
@@ -20,7 +22,15 @@ const Inner = () => {
   const applyReparent = useApp((s) => s.applyReparent);
   const { getIntersectingNodes } = useReactFlow();
 
-  const { nodes, edges } = useMemo(() => (tree ? layoutTree(tree) : { nodes: [], edges: [] }), [tree]);
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  useEffect(() => {
+    if (!tree) return;
+    const laid = layoutTree(tree);
+    setNodes(laid.nodes);
+    setEdges(laid.edges);
+  }, [tree, setNodes, setEdges]);
 
   const decoratedNodes = useMemo(
     () => nodes.map((n) => ({ ...n, selected: n.id === selectedNodeId })),
@@ -42,6 +52,8 @@ const Inner = () => {
     <ReactFlow
       nodes={decoratedNodes}
       edges={edges}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
       nodeTypes={nodeTypes}
       nodesConnectable={false}
       edgesFocusable={false}

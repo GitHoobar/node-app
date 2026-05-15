@@ -34,6 +34,9 @@ export type ServerSentEvent =
   | { kind: 'codex'; event: CodexEvent }
   | { kind: 'preview.reload' }
   | { kind: 'preview.url'; url: string }
+  | { kind: 'bootstrap.started' }
+  | { kind: 'bootstrap.done' }
+  | { kind: 'bootstrap.failed'; message: string }
   | { kind: 'log'; level: 'info' | 'warn' | 'error'; message: string };
 
 export const ROOT_NODE_ID = 'root';

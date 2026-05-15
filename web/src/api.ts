@@ -30,6 +30,9 @@ export const startLogin = (id: string): Promise<LoginStartResponse> =>
 export const getLoginStatus = (id: string): Promise<{ loggedIn: boolean }> =>
   fetch(`/projects/${id}/login/status`).then((r) => r.json());
 
+export const getPreviewReady = (id: string): Promise<{ ready: boolean }> =>
+  fetch(`/projects/${id}/preview/ready`).then((r) => r.json()).catch(() => ({ ready: false }));
+
 export const openStream = (id: string, onEvent: (sse: ServerSentEvent) => void): EventSource => {
   const es = new EventSource(`/projects/${id}/stream`);
   es.onmessage = (e) => {

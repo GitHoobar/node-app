@@ -41,6 +41,18 @@ export const projectsRouter = new Hono()
     const p = projects.get(c.req.param('id'));
     return p ? c.json(p) : c.json({ error: 'not_found' }, 404);
   })
+  .get('/:id/preview/ready', async (c) => {
+    const p = projects.get(c.req.param('id'));
+    if (!p?.previewUrl) return c.json({ ready: false });
+    try {
+      const r = await fetch(p.previewUrl, { signal: AbortSignal.timeout(2500), redirect: 'manual' });
+      const html = r.status < 500 ? await r.text().catch(() => '') : '';
+      const isE2bErrorPage = html.includes('Closed Port Error') || html.includes('Connection refused');
+      return c.json({ ready: r.status >= 200 && r.status < 500 && !isE2bErrorPage });
+    } catch {
+      return c.json({ ready: false });
+    }
+  })
   .patch('/:id/tree', async (c) => {
     const id = c.req.param('id');
     const body = await c.req.json();

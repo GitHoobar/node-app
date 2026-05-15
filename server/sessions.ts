@@ -18,12 +18,12 @@ const buildSession = async (projectId: string): Promise<Session> => {
   const p = projects.get(projectId);
   if (!p) throw new Error('project not found');
   const handles = p.sandboxId
-    ? await connectSandbox(p.sandboxId).catch(async () => {
-        const fresh = await createSandboxForProject();
+    ? await connectSandbox(p.id, p.sandboxId).catch(async () => {
+        const fresh = await createSandboxForProject(p.id);
         projects.setSandboxId(p.id, fresh.sandbox.sandboxId);
         return fresh;
       })
-    : await createSandboxForProject();
+    : await createSandboxForProject(p.id);
 
   if (handles.sandbox.sandboxId !== p.sandboxId) {
     projects.setSandboxId(p.id, handles.sandbox.sandboxId);

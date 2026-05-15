@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bun run build.ts",
+    "build": "bun run --env-file=../.env build.ts",
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {

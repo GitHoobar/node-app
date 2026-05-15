@@ -21,9 +21,10 @@ export const projectsRouter = new Hono()
     const body = await c.req.json().catch(() => ({}));
     const name = typeof body.name === 'string' && body.name ? body.name : 'Untitled Project';
     const token = mintCapabilityToken();
-    const handles = await createSandboxForProject();
+    const id = nanoid(12);
+    const handles = await createSandboxForProject(id);
     const project: Project = {
-      id: nanoid(12),
+      id,
       name,
       sandboxId: handles.sandbox.sandboxId,
       codexThreadId: null,

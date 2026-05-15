@@ -1,6 +1,8 @@
 import { Sandbox } from 'e2b';
 import { env } from './env.ts';
 import { isLoggedIn } from './codex-auth.ts';
+import { ensureBootstrapped } from './bootstrap.ts';
+import { publish } from './bus.ts';
 
 const CODEX_PORT = 4500;
 const PREVIEW_PORT = 3000;
@@ -39,11 +41,16 @@ const waitForPort = async (sandbox: Sandbox, port: number, timeoutMs: number): P
 const toHttps = (host: string) => (host.startsWith('http') ? host : `https://${host}`);
 const toWss = (host: string) => (host.startsWith('ws') ? host : `wss://${host}`);
 
-export const createSandboxForProject = async (): Promise<SandboxHandles> => {
-  const sandbox = await Sandbox.create(env.e2bTemplateId, {
-    apiKey: env.e2bApiKey,
-    timeoutMs: SANDBOX_TIMEOUT_MS,
-  });
+const createOpts = () => ({
+  apiKey: env.e2bApiKey,
+  timeoutMs: SANDBOX_TIMEOUT_MS,
+});
+
+export const createSandboxForProject = async (projectId: string): Promise<SandboxHandles> => {
+  const sandbox = env.e2bTemplateId
+    ? await Sandbox.create(env.e2bTemplateId, createOpts())
+    : await Sandbox.create(createOpts());
+  await ensureBootstrapped(sandbox, (line) => publish(projectId, { kind: 'log', level: 'info', message: line }));
   return {
     sandbox,
     previewUrl: toHttps(sandbox.getHost(PREVIEW_PORT)),
@@ -51,9 +58,10 @@ export const createSandboxForProject = async (): Promise<SandboxHandles> => {
   };
 };
 
-export const connectSandbox = async (sandboxId: string): Promise<SandboxHandles> => {
+export const connectSandbox = async (projectId: string, sandboxId: string): Promise<SandboxHandles> => {
   const sandbox = await Sandbox.connect(sandboxId, { apiKey: env.e2bApiKey });
   await sandbox.setTimeout(SANDBOX_TIMEOUT_MS);
+  await ensureBootstrapped(sandbox, (line) => publish(projectId, { kind: 'log', level: 'info', message: line }));
   return {
     sandbox,
     previewUrl: toHttps(sandbox.getHost(PREVIEW_PORT)),

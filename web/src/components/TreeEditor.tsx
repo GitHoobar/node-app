@@ -6,6 +6,7 @@ import ReactFlow, {
   useEdgesState,
   useNodesState,
   useReactFlow,
+  type Connection,
   type Node,
   type NodeMouseHandler,
 } from 'reactflow';
@@ -20,6 +21,7 @@ const Inner = () => {
   const selectedNodeId = useApp((s) => s.selectedNodeId);
   const select = useApp((s) => s.select);
   const applyReparent = useApp((s) => s.applyReparent);
+  const appendEvent = useApp((s) => s.appendEvent);
   const { getIntersectingNodes } = useReactFlow();
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -39,13 +41,36 @@ const Inner = () => {
 
   const onNodeClick: NodeMouseHandler = useCallback((_e, n) => select(n.id), [select]);
 
+  // primary reparent gesture: drag a wire from a node's bottom handle
+  // to another node's top handle (= onConnect)
+  const onConnect = useCallback(
+    (c: Connection) => {
+      if (!c.source || !c.target) return;
+      // user drags from PARENT-to-be (source) to CHILD (target)
+      // so the dragged "target" of the connection becomes a child of "source"
+      const ok = applyReparent(c.target, c.source);
+      appendEvent({
+        type: 'log',
+        level: ok ? 'info' : 'warn',
+        message: ok ? `reparented ${c.target} → child of ${c.source}` : `reparent rejected (cycle or root)`,
+      } as any);
+    },
+    [applyReparent, appendEvent],
+  );
+
+  // fallback: drag a node body and drop it onto another node
   const onNodeDragStop: NodeMouseHandler = useCallback(
     (_e, dragged: Node) => {
-      const target = getIntersectingNodes(dragged).find((n) => n.id !== dragged.id);
-      if (!target) return;
-      applyReparent(dragged.id, target.id);
+      const overlapping = getIntersectingNodes(dragged).filter((n) => n.id !== dragged.id);
+      if (overlapping.length === 0) return;
+      const ok = applyReparent(dragged.id, overlapping[0]!.id);
+      appendEvent({
+        type: 'log',
+        level: ok ? 'info' : 'warn',
+        message: ok ? `reparented ${dragged.id} → child of ${overlapping[0]!.id}` : 'reparent rejected (cycle or root)',
+      } as any);
     },
-    [getIntersectingNodes, applyReparent],
+    [getIntersectingNodes, applyReparent, appendEvent],
   );
 
   return (
@@ -55,10 +80,12 @@ const Inner = () => {
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       nodeTypes={nodeTypes}
-      nodesConnectable={false}
+      nodesConnectable
       edgesFocusable={false}
       onNodeClick={onNodeClick}
       onNodeDragStop={onNodeDragStop}
+      onConnect={onConnect}
+      defaultEdgeOptions={{ type: 'smoothstep', style: { stroke: '#52525b' } }}
       fitView
       proOptions={{ hideAttribution: true }}
     >

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { projects, emptyTree } from '../db.ts';
-import { bootstrapInBackground, createSandboxForProject, mintCapabilityToken } from '../sandbox.ts';
+import { mintCapabilityToken } from '../sandbox.ts';
 import { publish } from '../bus.ts';
 import type { Project, TreeNode } from '@shared/types';
 
@@ -22,19 +22,17 @@ export const projectsRouter = new Hono()
     const name = typeof body.name === 'string' && body.name ? body.name : 'Untitled Project';
     const token = mintCapabilityToken();
     const id = nanoid(12);
-    const handles = await createSandboxForProject();
     const project: Project = {
       id,
       name,
-      sandboxId: handles.sandbox.sandboxId,
+      sandboxId: null,
       codexThreadId: null,
       capabilityToken: token,
       tree: emptyTree(),
-      previewUrl: handles.previewUrl,
+      previewUrl: null,
       updatedAt: Date.now(),
     };
     projects.insert(project);
-    bootstrapInBackground(handles.sandbox, id);
     return c.json(project);
   })
   .get('/:id', (c) => {

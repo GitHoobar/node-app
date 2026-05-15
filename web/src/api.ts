@@ -21,6 +21,7 @@ export const generate = (id: string): Promise<unknown> =>
 
 export type LoginStartResponse =
   | { status: 'logged_in' }
+  | { status: 'preparing' }
   | { status: 'pending'; url: string; code: string }
   | { error: string };
 

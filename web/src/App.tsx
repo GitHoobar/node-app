@@ -35,6 +35,10 @@ export const App = () => {
   useEffect(() => {
     if (!project) return;
     setCodexConnected(false);
+    if (!project.sandboxId) {
+      setBootstrap('unknown');
+      return;
+    }
     let stopped = false;
     const poll = async () => {
       if (stopped) return;
@@ -130,16 +134,20 @@ export const App = () => {
           )}
           {project && (
             <>
-              {!sandboxReady && (
+              {bootstrap === 'pending' && (
                 <div className="rounded border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-400">
-                  {bootstrap === 'failed' ? 'sandbox setup failed' : 'setting up sandbox…'}
+                  setting up sandbox…
+                </div>
+              )}
+              {bootstrap === 'failed' && (
+                <div className="rounded border border-red-900 bg-red-950/40 px-3 py-1 text-xs text-red-300">
+                  sandbox setup failed
                 </div>
               )}
               <button
                 onClick={() => setLoginModalOpen(true)}
-                disabled={!sandboxReady}
                 className={
-                  'flex items-center gap-1 rounded border px-3 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40 ' +
+                  'flex items-center gap-1 rounded border px-3 py-1 text-xs font-medium ' +
                   (codexConnected
                     ? 'border-emerald-800 bg-emerald-950/40 text-emerald-300'
                     : 'border-amber-700 bg-amber-950/40 text-amber-300 hover:bg-amber-950')
@@ -149,7 +157,7 @@ export const App = () => {
               </button>
               <button
                 onClick={onGenerate}
-                disabled={generating || !sandboxReady}
+                disabled={generating || !sandboxReady || !codexConnected}
                 className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-xs font-medium hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Play size={12} /> {generating ? 'generating…' : 'Generate'}

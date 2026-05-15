@@ -8,7 +8,7 @@ type Props = {
   onClose: () => void;
 };
 
-type Phase = 'starting' | 'pending' | 'ok' | 'error';
+type Phase = 'preparing' | 'starting' | 'pending' | 'ok' | 'error';
 
 export const ConnectCodex = ({ projectId, onConnected, onClose }: Props) => {
   const [phase, setPhase] = useState<Phase>('starting');
@@ -19,7 +19,8 @@ export const ConnectCodex = ({ projectId, onConnected, onClose }: Props) => {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const tryStart = async (): Promise<void> => {
+      if (cancelled) return;
       try {
         const res = await startLogin(projectId);
         if (cancelled) return;
@@ -33,6 +34,11 @@ export const ConnectCodex = ({ projectId, onConnected, onClose }: Props) => {
           onConnected();
           return;
         }
+        if (res.status === 'preparing') {
+          setPhase('preparing');
+          setTimeout(tryStart, 3000);
+          return;
+        }
         setUrl(res.url);
         setCode(res.code);
         setPhase('pending');
@@ -41,7 +47,8 @@ export const ConnectCodex = ({ projectId, onConnected, onClose }: Props) => {
         setError(String(e));
         setPhase('error');
       }
-    })();
+    };
+    tryStart();
     return () => {
       cancelled = true;
     };
@@ -75,6 +82,13 @@ export const ConnectCodex = ({ projectId, onConnected, onClose }: Props) => {
         </div>
 
         {phase === 'starting' && <p className="text-sm text-zinc-400">Starting device authentication…</p>}
+
+        {phase === 'preparing' && (
+          <div className="flex flex-col gap-2 text-sm text-zinc-400">
+            <p>Spinning up your sandbox and installing Codex (one-time, ~3–5 min)…</p>
+            <p className="text-xs text-zinc-500">You can leave this open — we'll detect when it's ready.</p>
+          </div>
+        )}
 
         {phase === 'pending' && (
           <div className="flex flex-col gap-3">

@@ -12,7 +12,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS projects (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
-    sandbox_id      TEXT NOT NULL,
+    sandbox_id      TEXT,
     codex_thread_id TEXT,
     capability_token TEXT NOT NULL,
     tree_json       TEXT NOT NULL,
@@ -24,7 +24,7 @@ db.exec(`
 type Row = {
   id: string;
   name: string;
-  sandbox_id: string;
+  sandbox_id: string | null;
   codex_thread_id: string | null;
   capability_token: string;
   tree_json: string;

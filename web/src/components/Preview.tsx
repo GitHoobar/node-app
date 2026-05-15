@@ -1,10 +1,23 @@
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plug } from 'lucide-react';
 import { useApp } from '../store';
 
 export const Preview = () => {
   const url = useApp((s) => s.previewUrl);
   const key = useApp((s) => s.previewKey);
   const bootstrap = useApp((s) => s.bootstrap);
+  const project = useApp((s) => s.project);
+
+  if (!project?.sandboxId) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-zinc-500">
+        <Plug className="text-zinc-700" size={28} />
+        <div className="font-medium text-zinc-400">No sandbox yet</div>
+        <div className="px-6 text-xs text-zinc-500">
+          Click <span className="text-amber-300">Connect Codex</span> to spin up your project's sandbox and authenticate.
+        </div>
+      </div>
+    );
+  }
 
   if (bootstrap !== 'done') {
     return (

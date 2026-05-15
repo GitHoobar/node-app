@@ -8,7 +8,7 @@ export type TreeNode = {
 export type Project = {
   id: string;
   name: string;
-  sandboxId: string;
+  sandboxId: string | null;
   codexThreadId: string | null;
   capabilityToken: string;
   tree: TreeNode;

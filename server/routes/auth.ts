@@ -9,7 +9,11 @@ export const authRouter = new Hono()
   .post('/:id/login/start', async (c) => {
     const id = c.req.param('id');
     if (!projects.get(id)) return c.json({ error: 'not_found' }, 404);
-    if (!isBootstrapDone(id)) return c.json({ error: 'bootstrap_pending' }, 425);
+    if (!isBootstrapDone(id)) {
+      // kick off sandbox + bootstrap (in background — won't block the response)
+      getSession(id).catch((e) => publish(id, { kind: 'log', level: 'error', message: String(e) }));
+      return c.json({ status: 'preparing' });
+    }
     try {
       const { sandbox } = await getSession(id);
       if (await isLoggedIn(sandbox)) return c.json({ status: 'logged_in' });

@@ -39,7 +39,6 @@ const mapItem = (event: any): CodexEvent | null => {
 };
 
 const MODEL = process.env.CODEX_MODEL ?? '';
-const PROMPT_PATH = '/tmp/codex-prompt.txt';
 
 export const runCodexExec = async (
   sandbox: Sandbox,
@@ -47,12 +46,14 @@ export const runCodexExec = async (
   threadId: string | null,
   onEvent: (e: CodexEvent) => void,
 ): Promise<{ threadId: string | null }> => {
-  // write prompt to a file to avoid all shell-quoting pitfalls (the user-provided prompt may contain ', ", $, etc.)
-  await sandbox.files.write(PROMPT_PATH, prompt);
+  // write prompt to a fresh file per turn to dodge E2B's "files.write can't overwrite" quirk
+  const promptPath = `/tmp/codex-prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`;
+  await sandbox.commands.run(`bash -c "rm -f ${promptPath}"`);
+  await sandbox.files.write(promptPath, prompt);
   const resumeFlag = threadId ? `resume ${shellQuote(threadId)}` : '';
   const modelFlag = MODEL ? `-m ${shellQuote(MODEL)}` : '';
   // pipe the file as stdin; codex reads stdin when the prompt arg is '-' or omitted
-  const cmd = `bash -lc 'codex exec ${resumeFlag} ${modelFlag} --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -C /home/user - < ${PROMPT_PATH}'`;
+  const cmd = `bash -lc 'codex exec ${resumeFlag} ${modelFlag} --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -C /home/user - < ${promptPath}'`;
   let buf = '';
   let observedThreadId: string | null = threadId;
 

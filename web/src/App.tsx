@@ -1,0 +1,118 @@
+import { useEffect, useRef, useState } from 'react';
+import { Play } from 'lucide-react';
+import { createProject, generate, listProjects, openStream, patchTree } from './api';
+import { useApp } from './store';
+import { TreeEditor } from './components/TreeEditor';
+import { NodeInspector } from './components/NodeInspector';
+import { Preview } from './components/Preview';
+import { EventLog } from './components/EventLog';
+
+export const App = () => {
+  const project = useApp((s) => s.project);
+  const tree = useApp((s) => s.tree);
+  const setProject = useApp((s) => s.setProject);
+  const setPreviewUrl = useApp((s) => s.setPreviewUrl);
+  const bumpPreview = useApp((s) => s.bumpPreview);
+  const appendEvent = useApp((s) => s.appendEvent);
+  const setGenerating = useApp((s) => s.setGenerating);
+  const generating = useApp((s) => s.generating);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    listProjects().then((list) => {
+      const first = list[0];
+      if (first) setProject(first);
+    });
+  }, [setProject]);
+
+  useEffect(() => {
+    if (!project) return;
+    const es = openStream(project.id, (sse) => {
+      if (sse.kind === 'preview.url') setPreviewUrl(sse.url);
+      else if (sse.kind === 'preview.reload') {
+        bumpPreview();
+        setGenerating(false);
+      } else if (sse.kind === 'codex') {
+        appendEvent(sse.event);
+        if (sse.event.type === 'turn.failed') setGenerating(false);
+      } else if (sse.kind === 'log') {
+        appendEvent({ type: 'log', level: sse.level, message: sse.message } as any);
+      }
+    });
+    return () => es.close();
+  }, [project, setPreviewUrl, bumpPreview, appendEvent, setGenerating]);
+
+  const debouncer = useRef<number | null>(null);
+  useEffect(() => {
+    if (!project || !tree) return;
+    if (debouncer.current) window.clearTimeout(debouncer.current);
+    debouncer.current = window.setTimeout(() => {
+      patchTree(project.id, tree).catch(() => {});
+    }, 500);
+  }, [tree, project]);
+
+  const onCreate = async () => {
+    setCreating(true);
+    try {
+      const p = await createProject('Untitled');
+      setProject(p);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const onGenerate = async () => {
+    if (!project) return;
+    setGenerating(true);
+    await generate(project.id);
+  };
+
+  return (
+    <div className="grid h-full grid-cols-[320px_1fr_380px] grid-rows-[44px_1fr_180px]">
+      <header className="col-span-3 row-start-1 flex items-center justify-between border-b border-zinc-900 bg-zinc-950 px-4">
+        <div className="flex items-center gap-3">
+          <div className="text-sm font-semibold">node-app</div>
+          {project && <div className="text-xs text-zinc-500">{project.name}</div>}
+        </div>
+        <div className="flex items-center gap-2">
+          {!project && (
+            <button
+              onClick={onCreate}
+              disabled={creating}
+              className="rounded bg-emerald-600 px-3 py-1 text-xs font-medium hover:bg-emerald-500 disabled:opacity-50"
+            >
+              {creating ? 'creating sandbox…' : 'New Project'}
+            </button>
+          )}
+          {project && (
+            <button
+              onClick={onGenerate}
+              disabled={generating}
+              className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-xs font-medium hover:bg-emerald-500 disabled:opacity-50"
+            >
+              <Play size={12} /> {generating ? 'generating…' : 'Generate'}
+            </button>
+          )}
+        </div>
+      </header>
+
+      <aside className="row-start-2 row-span-2 border-r border-zinc-900 bg-zinc-950 overflow-y-auto">
+        <NodeInspector />
+      </aside>
+
+      <main className="row-start-2 bg-zinc-950">
+        {project ? <TreeEditor /> : <div className="flex h-full items-center justify-center text-sm text-zinc-500">Create a project to begin.</div>}
+      </main>
+
+      <section className="row-start-2 row-span-2 border-l border-zinc-900 bg-zinc-950">
+        <div className="h-full">
+          <Preview />
+        </div>
+      </section>
+
+      <section className="col-start-2 row-start-3 border-t border-zinc-900 bg-zinc-950">
+        <EventLog />
+      </section>
+    </div>
+  );
+};

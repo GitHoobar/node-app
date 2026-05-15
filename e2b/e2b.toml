@@ -1,0 +1,7 @@
+template_name = "node-app-bun"
+team_id = ""
+cpu_count = 4
+memory_mb = 4096
+start_cmd = "bun --bun run dev --turbo"
+ready_check_url = "http://localhost:3000"
+ready_check_port = 3000

@@ -1,44 +1,15 @@
 {
   "name": "node-app",
-  "version": "1.0.0",
-  "description": "Node.js Express API boilerplate",
+  "private": true,
   "type": "module",
-  "main": "src/server.js",
+  "workspaces": ["server", "web", "shared", "e2b"],
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "eslint .",
-    "format": "prettier . --write",
-    "format:check": "prettier . --check"
-  },
-  "engines": {
-    "node": ">=20"
-  },
-  "keywords": [
-    "node",
-    "express",
-    "api",
-    "boilerplate"
-  ],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "cors": "^2.8.6",
-    "dotenv": "^16.6.1",
-    "express": "^4.22.2",
-    "helmet": "^8.1.0",
-    "morgan": "^1.10.1"
+    "dev:server": "bun run --cwd server dev",
+    "dev:web": "bun run --cwd web dev",
+    "typecheck": "bun run --filter '*' typecheck"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
-    "eslint": "^9.39.4",
-    "eslint-config-prettier": "^9.1.2",
-    "globals": "^15.15.0",
-    "nodemon": "^3.1.14",
-    "prettier": "^3.8.3",
-    "supertest": "^7.2.2",
-    "vitest": "^4.1.6"
+    "typescript": "^5.6.3",
+    "bun-types": "^1.3.0"
   }
 }

@@ -1,0 +1,17 @@
+{
+  "name": "@node-app/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --hot index.ts",
+    "start": "bun run index.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "hono": "^4.6.10",
+    "e2b": "^1.13.0",
+    "nanoid": "^5.0.9",
+    "zod": "^3.23.8"
+  }
+}

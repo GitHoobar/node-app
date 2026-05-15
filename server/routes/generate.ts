@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { projects } from '../db.ts';
-import { getSession } from '../sessions.ts';
+import { getSession, refreshCodex } from '../sessions.ts';
 import { subscribe, publish } from '../bus.ts';
 import { compileTreeToPrompt } from '../tree.ts';
 
@@ -18,20 +18,25 @@ export const generateRouter = new Hono()
       try {
         const session = await getSession(id);
         if (!session.codex) {
-          publish(id, { kind: 'log', level: 'error', message: 'codex not connected — sign in with ChatGPT first' });
+          publish(id, { kind: 'log', level: 'info', message: 'connecting codex…' });
+          await refreshCodex(id);
+        }
+        const reloaded = await getSession(id);
+        if (!reloaded.codex) {
+          publish(id, { kind: 'log', level: 'error', message: 'codex still not connected — try Connect Codex again' });
           return;
         }
         let threadId = p.codexThreadId;
         if (!threadId) {
-          threadId = await session.codex.createThread('/home/user');
+          threadId = await reloaded.codex.createThread('/home/user');
           projects.setThreadId(id, threadId);
         } else {
-          await session.codex.resumeThread(threadId).catch(async () => {
-            threadId = await session.codex!.createThread('/home/user');
+          await reloaded.codex.resumeThread(threadId).catch(async () => {
+            threadId = await reloaded.codex!.createThread('/home/user');
             projects.setThreadId(id, threadId!);
           });
         }
-        await session.codex.sendUserMessage(threadId!, prompt);
+        await reloaded.codex.sendUserMessage(threadId!, prompt);
       } catch (err) {
         publish(id, { kind: 'log', level: 'error', message: String(err) });
       }

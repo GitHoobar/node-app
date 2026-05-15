@@ -150,10 +150,8 @@ if ! command -v bun >/dev/null; then
 fi
 echo "bun: $(bun --version)"
 
-if ! command -v codex >/dev/null; then
-  echo ">> install codex CLI"
-  npm i -g @openai/codex
-fi
+echo ">> install/upgrade codex CLI to latest (template ships 0.101 which lacks gpt-5 model support)"
+npm i -g @openai/codex@latest
 echo "codex: $(codex --version 2>/dev/null || echo missing)"
 echo ">> phase1 done"
 `;

@@ -38,14 +38,21 @@ const mapItem = (event: any): CodexEvent | null => {
   }
 };
 
+const MODEL = process.env.CODEX_MODEL ?? '';
+const PROMPT_PATH = '/tmp/codex-prompt.txt';
+
 export const runCodexExec = async (
   sandbox: Sandbox,
   prompt: string,
   threadId: string | null,
   onEvent: (e: CodexEvent) => void,
 ): Promise<{ threadId: string | null }> => {
+  // write prompt to a file to avoid all shell-quoting pitfalls (the user-provided prompt may contain ', ", $, etc.)
+  await sandbox.files.write(PROMPT_PATH, prompt);
   const resumeFlag = threadId ? `resume ${shellQuote(threadId)}` : '';
-  const cmd = `codex exec ${resumeFlag} --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -C /home/user ${shellQuote(prompt)}`;
+  const modelFlag = MODEL ? `-m ${shellQuote(MODEL)}` : '';
+  // pipe the file as stdin; codex reads stdin when the prompt arg is '-' or omitted
+  const cmd = `bash -lc 'codex exec ${resumeFlag} ${modelFlag} --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -C /home/user - < ${PROMPT_PATH}'`;
   let buf = '';
   let observedThreadId: string | null = threadId;
 

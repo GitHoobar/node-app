@@ -50,10 +50,12 @@ export const runCodexExec = async (
   const promptPath = `/tmp/codex-prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`;
   await sandbox.commands.run(`bash -c "rm -f ${promptPath}"`);
   await sandbox.files.write(promptPath, prompt);
-  const resumeFlag = threadId ? `resume ${shellQuote(threadId)}` : '';
   const modelFlag = MODEL ? `-m ${shellQuote(MODEL)}` : '';
-  // pipe the file as stdin; codex reads stdin when the prompt arg is '-' or omitted
-  const cmd = `bash -lc 'codex exec ${resumeFlag} ${modelFlag} --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -C /home/user - < ${promptPath}'`;
+  // codex exec's flags (-C, --json, -m, etc.) must come BEFORE the `resume` subcommand;
+  // resume is a sub-subcommand with its own parser that doesn't know -C.
+  // pipe the prompt file as stdin (codex reads stdin when prompt arg is '-' or omitted).
+  const resumePart = threadId ? `resume ${shellQuote(threadId)} -` : '-';
+  const cmd = `bash -lc 'codex exec ${modelFlag} --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -C /home/user ${resumePart} < ${promptPath}'`;
   let buf = '';
   let observedThreadId: string | null = threadId;
 

@@ -1,6 +1,6 @@
 import type { Sandbox } from 'e2b';
 import { CodexClient } from './codex.ts';
-import { createSandboxForProject, connectSandbox, ensureCodexAppServer } from './sandbox.ts';
+import { createSandboxForProject, connectSandbox, ensureCodexAppServer, ensureBootstrapForProject } from './sandbox.ts';
 import { isLoggedIn } from './codex-auth.ts';
 import { projects } from './db.ts';
 import { publish } from './bus.ts';
@@ -18,12 +18,12 @@ const buildSession = async (projectId: string): Promise<Session> => {
   const p = projects.get(projectId);
   if (!p) throw new Error('project not found');
   const handles = p.sandboxId
-    ? await connectSandbox(p.id, p.sandboxId).catch(async () => {
-        const fresh = await createSandboxForProject(p.id);
+    ? await connectSandbox(p.sandboxId).catch(async () => {
+        const fresh = await createSandboxForProject();
         projects.setSandboxId(p.id, fresh.sandbox.sandboxId);
         return fresh;
       })
-    : await createSandboxForProject(p.id);
+    : await createSandboxForProject();
 
   if (handles.sandbox.sandboxId !== p.sandboxId) {
     projects.setSandboxId(p.id, handles.sandbox.sandboxId);
@@ -32,6 +32,8 @@ const buildSession = async (projectId: string): Promise<Session> => {
     projects.setPreviewUrl(p.id, handles.previewUrl);
     publish(p.id, { kind: 'preview.url', url: handles.previewUrl });
   }
+
+  await ensureBootstrapForProject(handles.sandbox, p.id);
 
   let codex: CodexClient | null = null;
   if (await isLoggedIn(handles.sandbox)) {

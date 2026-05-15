@@ -46,11 +46,10 @@ const createOpts = () => ({
   timeoutMs: SANDBOX_TIMEOUT_MS,
 });
 
-export const createSandboxForProject = async (projectId: string): Promise<SandboxHandles> => {
+export const createSandboxForProject = async (): Promise<SandboxHandles> => {
   const sandbox = env.e2bTemplateId
     ? await Sandbox.create(env.e2bTemplateId, createOpts())
     : await Sandbox.create(createOpts());
-  await ensureBootstrapped(sandbox, (line) => publish(projectId, { kind: 'log', level: 'info', message: line }));
   return {
     sandbox,
     previewUrl: toHttps(sandbox.getHost(PREVIEW_PORT)),
@@ -58,15 +57,33 @@ export const createSandboxForProject = async (projectId: string): Promise<Sandbo
   };
 };
 
-export const connectSandbox = async (projectId: string, sandboxId: string): Promise<SandboxHandles> => {
+export const connectSandbox = async (sandboxId: string): Promise<SandboxHandles> => {
   const sandbox = await Sandbox.connect(sandboxId, { apiKey: env.e2bApiKey });
   await sandbox.setTimeout(SANDBOX_TIMEOUT_MS);
-  await ensureBootstrapped(sandbox, (line) => publish(projectId, { kind: 'log', level: 'info', message: line }));
   return {
     sandbox,
     previewUrl: toHttps(sandbox.getHost(PREVIEW_PORT)),
     codexWsUrl: toWss(sandbox.getHost(CODEX_PORT)),
   };
+};
+
+const bootstrapInflight = new Map<string, Promise<void>>();
+
+export const ensureBootstrapForProject = (sandbox: Sandbox, projectId: string): Promise<void> => {
+  const cached = bootstrapInflight.get(projectId);
+  if (cached) return cached;
+  const p = ensureBootstrapped(sandbox, (line) =>
+    publish(projectId, { kind: 'log', level: 'info', message: line }),
+  );
+  bootstrapInflight.set(projectId, p);
+  p.catch(() => undefined).finally(() => bootstrapInflight.delete(projectId));
+  return p;
+};
+
+export const bootstrapInBackground = (sandbox: Sandbox, projectId: string): void => {
+  ensureBootstrapForProject(sandbox, projectId).catch((e) =>
+    publish(projectId, { kind: 'log', level: 'error', message: `bootstrap failed: ${String(e)}` }),
+  );
 };
 
 export const mintCapabilityToken = (): string => crypto.randomUUID().replace(/-/g, '');

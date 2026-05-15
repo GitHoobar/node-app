@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { projects } from '../db.ts';
-import { getSession, refreshCodex } from '../sessions.ts';
+import { getSession, refreshLoginState } from '../sessions.ts';
 import { startDeviceLogin, isLoggedIn, stopDeviceLogin } from '../codex-auth.ts';
 import { isBootstrapDone } from '../sandbox.ts';
 import { publish } from '../bus.ts';
@@ -10,7 +10,6 @@ export const authRouter = new Hono()
     const id = c.req.param('id');
     if (!projects.get(id)) return c.json({ error: 'not_found' }, 404);
     if (!isBootstrapDone(id)) {
-      // kick off sandbox + bootstrap (in background — won't block the response)
       getSession(id).catch((e) => publish(id, { kind: 'log', level: 'error', message: String(e) }));
       return c.json({ status: 'preparing' });
     }
@@ -31,7 +30,7 @@ export const authRouter = new Hono()
     const logged = await isLoggedIn(sandbox);
     if (logged) {
       await stopDeviceLogin(sandbox);
-      await refreshCodex(id).catch((e) => publish(id, { kind: 'log', level: 'error', message: String(e) }));
+      await refreshLoginState(id);
     }
     return c.json({ loggedIn: logged });
   });

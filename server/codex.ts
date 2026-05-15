@@ -1,115 +1,82 @@
-import { randomUUID } from 'node:crypto';
+import type { Sandbox } from 'e2b';
 import type { CodexEvent } from '@shared/types';
 
-type Resolver = { resolve: (v: unknown) => void; reject: (e: unknown) => void };
+const shellQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 
-export class CodexClient {
-  private ws!: WebSocket;
-  private pending = new Map<string, Resolver>();
-  private listeners: ((e: CodexEvent) => void)[] = [];
-  private autoApprove = true;
+export type CodexExecHandle = {
+  threadId: string | null;
+};
 
-  static async connect(wsUrl: string, token: string): Promise<CodexClient> {
-    const c = new CodexClient();
-    const url = new URL(wsUrl);
-    url.searchParams.set('token', token);
-    c.ws = new WebSocket(url.toString());
-    await new Promise<void>((res, rej) => {
-      c.ws.addEventListener('open', () => res(), { once: true });
-      c.ws.addEventListener('error', (e) => rej(e), { once: true });
-    });
-    c.ws.addEventListener('message', (m) => c.onMessage(JSON.parse(String(m.data))));
-    await c.request('initialize', { protocolVersion: '0.1', clientInfo: { name: 'node-app', version: '0.0.0' } });
-    c.notify('initialized', {});
-    return c;
-  }
-
-  onEvent(fn: (e: CodexEvent) => void): () => void {
-    this.listeners.push(fn);
-    return () => {
-      this.listeners = this.listeners.filter((l) => l !== fn);
-    };
-  }
-
-  async createThread(workingDirectory = '/home/user'): Promise<string> {
-    const res = (await this.request('thread.create', { workingDirectory, skipGitRepoCheck: true })) as { threadId: string };
-    return res.threadId;
-  }
-
-  async resumeThread(threadId: string): Promise<void> {
-    await this.request('thread.resume', { threadId });
-  }
-
-  async sendUserMessage(threadId: string, text: string): Promise<void> {
-    await this.request('turn.start', { threadId, input: [{ type: 'text', text }] });
-  }
-
-  async approve(approvalId: string, decision: 'allow' | 'deny' = 'allow'): Promise<void> {
-    this.notify('approval.respond', { approvalId, decision });
-  }
-
-  close(): void {
-    try {
-      this.ws.close();
-    } catch {}
-  }
-
-  private request<T = unknown>(method: string, params: unknown): Promise<T> {
-    const id = randomUUID();
-    return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-      this.ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
-    });
-  }
-
-  private notify(method: string, params: unknown): void {
-    this.ws.send(JSON.stringify({ jsonrpc: '2.0', method, params }));
-  }
-
-  private onMessage(msg: any): void {
-    if (msg.id !== undefined && this.pending.has(msg.id)) {
-      const { resolve, reject } = this.pending.get(msg.id)!;
-      this.pending.delete(msg.id);
-      if (msg.error) reject(msg.error);
-      else resolve(msg.result);
-      return;
-    }
-    const event = mapToCodexEvent(msg);
-    if (!event) return;
-    if (this.autoApprove && event.type === 'approval.requested') {
-      this.approve(event.approvalId, 'allow').catch(() => {});
-    }
-    for (const fn of this.listeners) fn(event);
-  }
-}
-
-const mapToCodexEvent = (msg: any): CodexEvent | null => {
-  if (!msg || typeof msg !== 'object') return null;
-  const method = msg.method as string | undefined;
-  const p = msg.params ?? {};
-  switch (method) {
+const mapItem = (event: any): CodexEvent | null => {
+  const type = event?.type as string | undefined;
+  if (!type) return null;
+  switch (type) {
     case 'thread.started':
-      return { type: 'thread.started', threadId: p.threadId };
+      return { type: 'thread.started', threadId: event.thread_id ?? event.threadId };
     case 'turn.started':
-      return { type: 'turn.started', turnId: p.turnId };
+      return { type: 'turn.started', turnId: event.turn_id ?? event.turnId ?? 'turn' };
     case 'turn.completed':
-      return { type: 'turn.completed', turnId: p.turnId };
+      return { type: 'turn.completed', turnId: event.turn_id ?? event.turnId ?? 'turn' };
     case 'turn.failed':
-      return { type: 'turn.failed', turnId: p.turnId, error: p.error };
+      return { type: 'turn.failed', turnId: event.turn_id ?? 'turn', error: event.error?.message ?? String(event.error) };
     case 'item.started':
     case 'item.delta':
-    case 'item.completed':
-      return {
-        type: method as 'item.started' | 'item.delta' | 'item.completed',
-        itemId: p.itemId,
-        kind: p.kind ?? 'message',
-        payload: p.payload,
-      };
-    case 'approval.requested':
-      return { type: 'approval.requested', approvalId: p.approvalId, summary: p.summary ?? '' };
+    case 'item.completed': {
+      const item = event.item ?? {};
+      let kind: 'message' | 'reasoning' | 'file_change' | 'command' | 'tool_call' = 'message';
+      if (item.type === 'reasoning') kind = 'reasoning';
+      else if (item.type === 'file_change' || item.type === 'patch_apply') kind = 'file_change';
+      else if (item.type === 'command_execution') kind = 'command';
+      else if (item.type === 'mcp_tool_call' || item.type === 'web_search') kind = 'tool_call';
+      else if (item.type === 'agent_message') kind = 'message';
+      return { type: type as 'item.completed', itemId: item.id ?? 'item', kind, payload: item };
+    }
     case 'error':
-      return { type: 'error', message: p.message ?? 'unknown' };
+      return { type: 'error', message: event.message ?? 'unknown' };
     default:
       return null;
   }
+};
+
+export const runCodexExec = async (
+  sandbox: Sandbox,
+  prompt: string,
+  threadId: string | null,
+  onEvent: (e: CodexEvent) => void,
+): Promise<{ threadId: string | null }> => {
+  const resumeFlag = threadId ? `resume ${shellQuote(threadId)}` : '';
+  const cmd = `codex exec ${resumeFlag} --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -C /home/user ${shellQuote(prompt)}`;
+  let buf = '';
+  let observedThreadId: string | null = threadId;
+
+  const proc = await sandbox.commands.run(cmd, {
+    timeoutMs: 15 * 60_000,
+    onStdout: (chunk: string) => {
+      buf += chunk;
+      let idx: number;
+      while ((idx = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        if (!line) continue;
+        try {
+          const ev = JSON.parse(line);
+          if (ev.type === 'thread.started' && (ev.thread_id ?? ev.threadId)) {
+            observedThreadId = ev.thread_id ?? ev.threadId;
+          }
+          const mapped = mapItem(ev);
+          if (mapped) onEvent(mapped);
+        } catch {
+          // not valid JSON, ignore (could be banner/debug text)
+        }
+      }
+    },
+    onStderr: (chunk: string) => {
+      onEvent({ type: 'error', message: chunk.trim() });
+    },
+  });
+
+  if (proc.exitCode !== 0) {
+    onEvent({ type: 'turn.failed', turnId: 'final', error: `codex exec exit ${proc.exitCode}` });
+  }
+  return { threadId: observedThreadId };
 };

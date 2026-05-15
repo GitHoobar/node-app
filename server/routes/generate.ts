@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { projects } from '../db.ts';
-import { getSession, refreshCodex } from '../sessions.ts';
+import { getSession, refreshLoginState } from '../sessions.ts';
 import { subscribe, publish } from '../bus.ts';
 import { compileTreeToPrompt } from '../tree.ts';
+import { runCodexExec } from '../codex.ts';
 
 export const generateRouter = new Hono()
   .post('/:id/generate', async (c) => {
@@ -17,26 +18,23 @@ export const generateRouter = new Hono()
     queueMicrotask(async () => {
       try {
         const session = await getSession(id);
-        if (!session.codex) {
-          publish(id, { kind: 'log', level: 'info', message: 'connecting codex…' });
-          await refreshCodex(id);
+        if (!session.loggedIn) {
+          const logged = await refreshLoginState(id);
+          if (!logged) {
+            publish(id, { kind: 'log', level: 'error', message: 'codex not connected — click Connect Codex first' });
+            return;
+          }
         }
-        const reloaded = await getSession(id);
-        if (!reloaded.codex) {
-          publish(id, { kind: 'log', level: 'error', message: 'codex still not connected — try Connect Codex again' });
-          return;
+        const { threadId: nextThreadId } = await runCodexExec(
+          session.sandbox,
+          prompt,
+          p.codexThreadId,
+          (event) => publish(id, { kind: 'codex', event }),
+        );
+        if (nextThreadId && nextThreadId !== p.codexThreadId) {
+          projects.setThreadId(id, nextThreadId);
         }
-        let threadId = p.codexThreadId;
-        if (!threadId) {
-          threadId = await reloaded.codex.createThread('/home/user');
-          projects.setThreadId(id, threadId);
-        } else {
-          await reloaded.codex.resumeThread(threadId).catch(async () => {
-            threadId = await reloaded.codex!.createThread('/home/user');
-            projects.setThreadId(id, threadId!);
-          });
-        }
-        await reloaded.codex.sendUserMessage(threadId!, prompt);
+        publish(id, { kind: 'preview.reload' });
       } catch (err) {
         publish(id, { kind: 'log', level: 'error', message: String(err) });
       }
@@ -72,10 +70,6 @@ export const generateRouter = new Hono()
         }
         const data = queue.shift()!;
         await stream.writeSSE({ event: 'message', data });
-        const parsed = JSON.parse(data) as { kind: string; event?: { type?: string } };
-        if (parsed.kind === 'codex' && parsed.event?.type === 'turn.completed') {
-          await stream.writeSSE({ event: 'message', data: JSON.stringify({ kind: 'preview.reload' }) });
-        }
       }
     });
   });

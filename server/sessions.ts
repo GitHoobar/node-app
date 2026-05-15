@@ -15,15 +15,19 @@ type Session = {
 const sessions = new Map<string, Promise<Session>>();
 
 const buildSession = async (projectId: string): Promise<Session> => {
+  console.info(`[session ${projectId}] buildSession start`);
   const p = projects.get(projectId);
   if (!p) throw new Error('project not found');
+  console.info(`[session ${projectId}] project loaded, sandboxId=${p.sandboxId ?? 'null'}`);
   const handles = p.sandboxId
-    ? await connectSandbox(p.sandboxId).catch(async () => {
+    ? await connectSandbox(p.sandboxId).catch(async (e) => {
+        console.warn(`[session ${projectId}] connect failed (${String(e)}), creating fresh`);
         const fresh = await createSandboxForProject();
         projects.setSandboxId(p.id, fresh.sandbox.sandboxId);
         return fresh;
       })
     : await createSandboxForProject();
+  console.info(`[session ${projectId}] sandbox ready: ${handles.sandbox.sandboxId}, preview=${handles.previewUrl}`);
 
   if (handles.sandbox.sandboxId !== p.sandboxId) {
     projects.setSandboxId(p.id, handles.sandbox.sandboxId);
@@ -33,13 +37,23 @@ const buildSession = async (projectId: string): Promise<Session> => {
     publish(p.id, { kind: 'preview.url', url: handles.previewUrl });
   }
 
-  await ensureBootstrapForProject(handles.sandbox, p.id);
+  console.info(`[session ${projectId}] ensureBootstrap start`);
+  try {
+    await ensureBootstrapForProject(handles.sandbox, p.id);
+    console.info(`[session ${projectId}] ensureBootstrap done`);
+  } catch (e) {
+    console.error(`[session ${projectId}] bootstrap FAILED:`, e);
+    throw e;
+  }
 
   let codex: CodexClient | null = null;
   if (await isLoggedIn(handles.sandbox)) {
+    console.info(`[session ${projectId}] codex already logged in, starting app-server`);
     await ensureCodexAppServer(handles.sandbox, p.capabilityToken);
     codex = await CodexClient.connect(handles.codexWsUrl, p.capabilityToken);
     codex.onEvent((event) => publish(p.id, { kind: 'codex', event }));
+  } else {
+    console.info(`[session ${projectId}] codex not yet logged in`);
   }
 
   return { sandbox: handles.sandbox, codex, previewUrl: handles.previewUrl, codexWsUrl: handles.codexWsUrl };

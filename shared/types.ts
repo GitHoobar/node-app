@@ -40,10 +40,14 @@ export type ServerSentEvent =
   | { kind: 'log'; level: 'info' | 'warn' | 'error'; message: string };
 
 export const ROOT_NODE_ID = 'root';
+export const APP_ROOT_NAME = 'App';
 
 export const emptyTree = (): TreeNode => ({
   id: ROOT_NODE_ID,
-  name: 'Home',
+  name: APP_ROOT_NAME,
   prompt: '',
   children: [],
 });
+
+export const normalizeAppRoot = (tree: TreeNode): TreeNode =>
+  tree.id === ROOT_NODE_ID && tree.name !== APP_ROOT_NAME ? { ...tree, name: APP_ROOT_NAME } : tree;

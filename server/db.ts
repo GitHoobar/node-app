@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { env } from './env.ts';
 import type { Project, TreeNode } from '@shared/types';
-import { emptyTree } from '@shared/types';
+import { emptyTree, normalizeAppRoot } from '@shared/types';
 
 mkdirSync(dirname(env.databasePath), { recursive: true });
 export const db = new Database(env.databasePath, { create: true });
@@ -38,7 +38,7 @@ const toProject = (r: Row): Project => ({
   sandboxId: r.sandbox_id,
   codexThreadId: r.codex_thread_id,
   capabilityToken: r.capability_token,
-  tree: JSON.parse(r.tree_json) as TreeNode,
+  tree: normalizeAppRoot(JSON.parse(r.tree_json) as TreeNode),
   previewUrl: r.preview_url,
   updatedAt: r.updated_at,
 });
@@ -52,15 +52,16 @@ export const projects = {
     return r ? toProject(r) : null;
   },
   insert(p: Project): void {
+    const tree = normalizeAppRoot(p.tree);
     db.run(
       'INSERT INTO projects (id, name, sandbox_id, codex_thread_id, capability_token, tree_json, preview_url, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [p.id, p.name, p.sandboxId, p.codexThreadId, p.capabilityToken, JSON.stringify(p.tree), p.previewUrl, p.updatedAt],
+      [p.id, p.name, p.sandboxId, p.codexThreadId, p.capabilityToken, JSON.stringify(tree), p.previewUrl, p.updatedAt],
     );
   },
   updateTree(id: string, tree: TreeNode): void {
-    db.run('UPDATE projects SET tree_json = ?, updated_at = ? WHERE id = ?', [JSON.stringify(tree), Date.now(), id]);
+    db.run('UPDATE projects SET tree_json = ?, updated_at = ? WHERE id = ?', [JSON.stringify(normalizeAppRoot(tree)), Date.now(), id]);
   },
-  setThreadId(id: string, threadId: string): void {
+  setThreadId(id: string, threadId: string | null): void {
     db.run('UPDATE projects SET codex_thread_id = ?, updated_at = ? WHERE id = ?', [threadId, Date.now(), id]);
   },
   setPreviewUrl(id: string, url: string): void {

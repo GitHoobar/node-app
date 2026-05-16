@@ -10,3 +10,51 @@ body { overflow: hidden; }
 }
 .rf-page-node.selected { @apply border-emerald-500 shadow-emerald-900/40; }
 .rf-page-node.root { @apply border-amber-500/50; }
+
+.tree-view-switcher {
+  @apply absolute left-4 top-4 z-10 flex overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/90 p-1 shadow-lg shadow-black/30 backdrop-blur;
+}
+
+.tree-view-switcher button {
+  @apply flex h-7 items-center gap-1 rounded px-2 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100;
+}
+
+.tree-view-switcher button.active {
+  @apply bg-zinc-800 text-emerald-300;
+}
+
+.obsidian-tree-node {
+  @apply relative flex h-[42px] w-[172px] items-center gap-2 text-xs text-zinc-300;
+}
+
+.obsidian-tree-dot {
+  @apply h-4 w-4 shrink-0 rounded-full border border-zinc-500 bg-zinc-400 shadow-[0_0_18px_rgba(161,161,170,0.18)];
+}
+
+.obsidian-tree-node.root .obsidian-tree-dot {
+  @apply border-amber-300 bg-amber-200 shadow-[0_0_20px_rgba(252,211,77,0.18)];
+}
+
+.obsidian-tree-node.selected .obsidian-tree-dot {
+  @apply border-emerald-300 bg-emerald-300 shadow-[0_0_22px_rgba(110,231,183,0.28)];
+}
+
+.obsidian-tree-label {
+  @apply min-w-0 rounded bg-zinc-950/70 px-2 py-1 ring-1 ring-transparent;
+}
+
+.obsidian-tree-node.selected .obsidian-tree-label {
+  @apply ring-emerald-500/40;
+}
+
+.obsidian-tree-title {
+  @apply truncate text-[13px] font-medium leading-4 text-zinc-200;
+}
+
+.obsidian-tree-count {
+  @apply truncate text-[10px] leading-3 text-zinc-500;
+}
+
+.obsidian-tree-handle {
+  @apply pointer-events-none opacity-0;
+}

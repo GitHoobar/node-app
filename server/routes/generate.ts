@@ -4,7 +4,8 @@ import { projects } from '../db.ts';
 import { getSession, refreshLoginState } from '../sessions.ts';
 import { subscribe, publish } from '../bus.ts';
 import { compileTreeToPrompt } from '../tree.ts';
-import { runCodexExec } from '../codex.ts';
+import { runCodex, runWithMissingThreadFallback } from '../codex.ts';
+import { ensureDevServer } from '../bootstrap.ts';
 
 export const generateRouter = new Hono()
   .post('/:id/generate', async (c) => {
@@ -25,15 +26,23 @@ export const generateRouter = new Hono()
             return;
           }
         }
-        const { threadId: nextThreadId } = await runCodexExec(
-          session.sandbox,
-          prompt,
+        const { threadId: nextThreadId } = await runWithMissingThreadFallback(
           p.codexThreadId,
-          (event) => publish(id, { kind: 'codex', event }),
+          (threadId) =>
+            runCodex(session.sandbox, prompt, threadId, (event) => publish(id, { kind: 'codex', event })),
+          (missingThreadId) => {
+            projects.setThreadId(id, null);
+            publish(id, {
+              kind: 'log',
+              level: 'warn',
+              message: `saved Codex thread was missing (${missingThreadId.slice(0, 8)}); starting a fresh thread`,
+            });
+          },
         );
         if (nextThreadId && nextThreadId !== p.codexThreadId) {
           projects.setThreadId(id, nextThreadId);
         }
+        await ensureDevServer(session.sandbox, (line) => publish(id, { kind: 'log', level: 'info', message: line }));
         publish(id, { kind: 'preview.reload' });
       } catch (err) {
         publish(id, { kind: 'log', level: 'error', message: String(err) });

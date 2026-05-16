@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "bun run --hot --env-file=../.env index.ts",
     "start": "bun run --env-file=../.env index.ts",
+    "test": "bun test",
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@openai/codex-sdk": "^0.130.0",
+    "e2b": "^2.20.1",
     "hono": "^4.6.10",
-    "e2b": "^1.13.0",
     "nanoid": "^5.0.9",
     "zod": "^3.23.8"
   }

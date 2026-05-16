@@ -6,6 +6,7 @@
   "scripts": {
     "dev:server": "bun run --cwd server dev",
     "dev:web": "bun run --cwd web dev",
+    "test": "bun test",
     "typecheck": "bun run --filter '*' typecheck"
   },
   "devDependencies": {

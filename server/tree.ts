@@ -1,5 +1,4 @@
 import type { TreeNode } from '@shared/types';
-import { ROOT_NODE_ID } from '@shared/types';
 
 const slugify = (s: string): string =>
   s
@@ -21,47 +20,48 @@ export const compileTree = (root: TreeNode): CompiledPage[] => {
   const idToRoute = new Map<string, string>();
 
   const visit = (node: TreeNode): void => {
-    let route: string;
-    if (node.id === ROOT_NODE_ID) {
-      route = '/';
-    } else {
-      const base = '/' + slugify(node.name);
-      let candidate = base;
-      let i = 2;
-      while (used.has(candidate)) candidate = `${base}-${i++}`;
-      route = candidate;
-    }
+    const base = '/' + slugify(node.name);
+    let candidate = base;
+    let i = 2;
+    while (used.has(candidate)) candidate = `${base}-${i++}`;
+    const route = candidate;
     used.add(route);
     idToRoute.set(node.id, route);
     pages.push({ id: node.id, route, prompt: node.prompt, links: [] });
     for (const child of node.children) visit(child);
   };
-  visit(root);
+  for (const child of root.children) visit(child);
+
+  const globalLinks = root.children.map((child) => idToRoute.get(child.id)).filter((route): route is string => Boolean(route));
 
   const fillLinks = (node: TreeNode): void => {
     const page = pages.find((p) => p.id === node.id)!;
-    page.links = node.children.map((c) => idToRoute.get(c.id)!);
+    const childLinks = node.children.map((c) => idToRoute.get(c.id)!);
+    page.links = [...new Set([...globalLinks, ...childLinks])];
     for (const child of node.children) fillLinks(child);
   };
-  fillLinks(root);
+  for (const child of root.children) fillLinks(child);
 
   return pages;
 };
 
 export const compileTreeToPrompt = (root: TreeNode): string => {
   const pages = compileTree(root);
+  const appDescription = root.prompt.trim() || '(no global description)';
   const pageBlocks = pages
     .map((p) => {
       const links = p.links.length ? `\n  Links to: ${p.links.map((l) => `\`${l}\``).join(', ')}` : '';
       const body = p.prompt.trim() || '(no description — keep this page simple)';
       return `- \`${p.route}\` — ${body}${links}`;
     })
-    .join('\n');
+    .join('\n') || '(no page routes configured yet)';
 
-  return `You are editing a Next.js 16 (App Router) project at \`/home/user\`. Implement EXACTLY these pages — create or rewrite each one to match its description. Use Tailwind CSS and shadcn/ui components where helpful. Every page MUST render a top-level <nav> that links to every route listed under "Links to" with Next.js <Link> components. Keep \`app/layout.tsx\` minimal. Do not modify build/config files unless strictly required.
+  return `You are editing a Next.js 16 (App Router) project at \`/home/user\`. The root App node is global app guidance, not a routable page. Implement EXACTLY these page routes — create or rewrite each listed page to match its description. Use Tailwind CSS and shadcn/ui components where helpful. Every page MUST render a top-level <nav> that links to every route listed under "Links to" with Next.js <Link> components. Keep \`app/layout.tsx\` minimal and aligned with the global app instructions. Do not modify build/config files unless strictly required.
 
-For each page \`<route>\`, write the file:
-  - \`/\`             → \`app/page.tsx\`
+Global app instructions:
+${appDescription}
+
+For each page \`<route>\`, write the file using Next.js App Router conventions:
   - \`/something\`    → \`app/something/page.tsx\`
 
 Pages:

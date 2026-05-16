@@ -2,6 +2,8 @@ import type { Sandbox } from 'e2b';
 
 const MARKER = '/home/user/.node-app-bootstrapped';
 const LOG = '/tmp/node-app-bootstrap.log';
+const CODEX_SDK_PACKAGE = '@openai/codex-sdk@0.130.0';
+const CODEX_SDK_RUNNER_DIR = '/tmp/node-app-codex-sdk-runner';
 
 const exists = async (sandbox: Sandbox, path: string): Promise<boolean> => {
   const r = await sandbox.commands.run(`test -e "${path}" && echo yes || echo no`);
@@ -153,6 +155,10 @@ echo "bun: $(bun --version)"
 echo ">> install/upgrade codex CLI to latest (template ships 0.101 which lacks gpt-5 model support)"
 npm i -g @openai/codex@latest
 echo "codex: $(codex --version 2>/dev/null || echo missing)"
+echo ">> install Codex SDK runner dependencies"
+rm -rf ${CODEX_SDK_RUNNER_DIR}
+mkdir -p ${CODEX_SDK_RUNNER_DIR}
+npm install --prefix ${CODEX_SDK_RUNNER_DIR} ${CODEX_SDK_PACKAGE} --no-audit --no-fund --loglevel=error
 echo ">> phase1 done"
 `;
 
@@ -194,11 +200,12 @@ const runScript = async (
   const check = await sandbox.commands.run(`ls -la ${scriptPath}`);
   console.info(`[bootstrap] script written: ${check.stdout.trim()}`);
 
+  const initialSize = await sandbox.commands.run(`wc -c < ${LOG} 2>/dev/null || echo 0`);
+  let lastSize = Number(initialSize.stdout.trim()) || 0;
   console.info(`[bootstrap] launching: nohup bash ${scriptPath} >> ${LOG} 2>&1 &`);
   await sandbox.commands.run(`nohup bash ${scriptPath} >> ${LOG} 2>&1 &`, { background: true });
 
   const deadline = Date.now() + timeoutMs;
-  let lastSize = 0;
   let seenDone = false;
   while (Date.now() < deadline) {
     const r = await sandbox.commands.run(`wc -c < ${LOG} 2>/dev/null || echo 0`);
@@ -209,13 +216,14 @@ const runScript = async (
         if (line.trim()) onLog(line);
         if (line.includes(doneMarker)) seenDone = true;
       }
-      lastSize = size;
+      lastSize += chunk.stdout.length;
+      if (lastSize > size) lastSize = size;
     }
     if (seenDone) {
       console.info(`[bootstrap] saw '${doneMarker}'`);
       return;
     }
-    const alive = await sandbox.commands.run(`pgrep -f 'bash ${scriptPath}' >/dev/null && echo y || echo n`);
+    const alive = await sandbox.commands.run(`pgrep -f '[b]ash ${scriptPath}' >/dev/null && echo y || echo n`);
     if (alive.stdout.trim() === 'n' && !seenDone) {
       const final = await sandbox.commands.run(`tail -c +${lastSize + 1} ${LOG} 2>/dev/null || true`);
       for (const line of final.stdout.split('\n')) if (line.trim()) onLog(line);
@@ -258,11 +266,36 @@ export const ensureBootstrapped = async (
   await ensureDevServer(sandbox, onLog);
 };
 
-const ensureDevServer = async (sandbox: Sandbox, onLog: (line: string) => void): Promise<void> => {
+export const ensureDevServer = async (sandbox: Sandbox, onLog: (line: string) => void): Promise<void> => {
   const portCheck = await sandbox.commands.run(
     `bash -c "exec 3<>/dev/tcp/127.0.0.1/3000 && echo up" 2>/dev/null || true`,
   );
   if (portCheck.stdout.includes('up')) {
+    const status = await sandbox.commands.run(`curl -sS -o /tmp/node-app-preview-check.html -w "%{http_code}" --max-time 5 http://127.0.0.1:3000 || true`);
+    if (status.stdout.trim().startsWith('5')) {
+      const log = await sandbox.commands.run('tail -120 /tmp/next-dev.log || true');
+      const hasCorruptNextCache =
+        log.stdout.includes('/home/user/.next/static/development/_buildManifest.js.tmp') ||
+        log.stdout.includes('/home/user/.next/server/app/_not-found/page/app-build-manifest.json');
+      if (hasCorruptNextCache) {
+        onLog('▸ Next.js dev cache is corrupted; rebuilding preview server');
+        await sandbox.commands.run(
+          `bash -lc "ss -ltnp 'sport = :3000' | sed -n 's/.*pid=\\([0-9][0-9]*\\).*/\\1/p' | sort -u | xargs -r kill; rm -rf /home/user/.next /tmp/next-dev.log"`,
+        );
+      } else {
+        onLog('▸ dev server already up');
+        return;
+      }
+    } else {
+      onLog('▸ dev server already up');
+      return;
+    }
+  }
+
+  const portCheckAfterCleanup = await sandbox.commands.run(
+    `bash -c "exec 3<>/dev/tcp/127.0.0.1/3000 && echo up" 2>/dev/null || true`,
+  );
+  if (portCheckAfterCleanup.stdout.includes('up')) {
     onLog('▸ dev server already up');
     return;
   }

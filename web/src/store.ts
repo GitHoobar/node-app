@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { CodexEvent, Project, TreeNode } from '@shared/types';
 import { ROOT_NODE_ID } from '@shared/types';
-import { addChild, deleteNode, reparent, updateNode } from './lib/tree-ops';
+import { addChild, deleteNodes, reparent, updateNode } from './lib/tree-ops';
 
 type EventLogItem = { id: number; ts: number; event: CodexEvent | { type: 'log'; level: string; message: string } };
 
@@ -20,10 +20,12 @@ type State = {
   bootstrap: BootstrapPhase;
 
   setProject: (p: Project) => void;
+  updateProjectMetadata: (p: Project) => void;
   select: (id: string) => void;
   applyAddChild: (parentId: string) => void;
   applyUpdate: (id: string, patch: Partial<Pick<TreeNode, 'name' | 'prompt'>>) => void;
   applyDelete: (id: string) => void;
+  applyDeleteMany: (ids: ReadonlyArray<string>) => void;
   applyReparent: (sourceId: string, targetId: string) => boolean;
   bumpPreview: () => void;
   setPreviewUrl: (url: string) => void;
@@ -48,7 +50,34 @@ export const useApp = create<State>((set, get) => ({
   loginModalOpen: false,
   bootstrap: 'unknown',
 
-  setProject: (p) => set({ project: p, tree: p.tree, previewUrl: p.previewUrl, selectedNodeId: ROOT_NODE_ID, codexConnected: false, bootstrap: 'unknown' }),
+  setProject: (p) =>
+    set({
+      project: p,
+      tree: p.tree,
+      previewUrl: p.previewUrl,
+      selectedNodeId: ROOT_NODE_ID,
+      events: [],
+      generating: false,
+      codexConnected: false,
+      loginModalOpen: false,
+      bootstrap: 'unknown',
+    }),
+  updateProjectMetadata: (p) =>
+    set((s) => {
+      if (s.project?.id !== p.id) return {};
+      return {
+        project: {
+          ...s.project,
+          name: p.name,
+          sandboxId: p.sandboxId,
+          codexThreadId: p.codexThreadId,
+          capabilityToken: p.capabilityToken,
+          previewUrl: p.previewUrl,
+          updatedAt: p.updatedAt,
+        },
+        previewUrl: p.previewUrl,
+      };
+    }),
   select: (id) => set({ selectedNodeId: id }),
   applyAddChild: (parentId) => {
     const tree = get().tree;
@@ -61,9 +90,13 @@ export const useApp = create<State>((set, get) => ({
     set({ tree: updateNode(tree, id, patch) });
   },
   applyDelete: (id) => {
+    get().applyDeleteMany([id]);
+  },
+  applyDeleteMany: (ids) => {
     const tree = get().tree;
     if (!tree) return;
-    set({ tree: deleteNode(tree, id), selectedNodeId: ROOT_NODE_ID });
+    if (ids.length === 0) return;
+    set({ tree: deleteNodes(tree, ids), selectedNodeId: ROOT_NODE_ID });
   },
   applyReparent: (sourceId, targetId) => {
     const tree = get().tree;
@@ -74,7 +107,7 @@ export const useApp = create<State>((set, get) => ({
     return true;
   },
   bumpPreview: () => set((s) => ({ previewKey: s.previewKey + 1 })),
-  setPreviewUrl: (url) => set({ previewUrl: url }),
+  setPreviewUrl: (url) => set((s) => ({ previewUrl: url, project: s.project ? { ...s.project, previewUrl: url } : s.project })),
   appendEvent: (event) => set((s) => ({ events: [...s.events.slice(-300), { id: ++eid, ts: Date.now(), event }] })),
   setGenerating: (g) => set({ generating: g }),
   setCodexConnected: (c) => set({ codexConnected: c }),

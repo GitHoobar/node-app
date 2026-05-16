@@ -55,14 +55,19 @@ export const updateNode = (
   return next;
 };
 
-export const deleteNode = (root: TreeNode, id: string): TreeNode => {
-  if (id === ROOT_NODE_ID) return root;
-  const next = cloneTree(root);
-  const parent = findParent(next, id);
-  if (!parent) return next;
-  parent.children = parent.children.filter((c) => c.id !== id);
-  return next;
+export const deleteNodes = (root: TreeNode, ids: ReadonlyArray<string>): TreeNode => {
+  const idsToDelete = new Set(ids.filter((id) => id !== ROOT_NODE_ID));
+  if (idsToDelete.size === 0) return root;
+
+  const prune = (node: TreeNode): TreeNode => ({
+    ...node,
+    children: node.children.filter((child) => !idsToDelete.has(child.id)).map(prune),
+  });
+
+  return prune(root);
 };
+
+export const deleteNode = (root: TreeNode, id: string): TreeNode => deleteNodes(root, [id]);
 
 export const reparent = (root: TreeNode, sourceId: string, targetId: string): TreeNode | null => {
   if (sourceId === ROOT_NODE_ID || sourceId === targetId) return null;

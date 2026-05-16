@@ -5,6 +5,7 @@ const DEVICE_LOG_PATH = '/tmp/codex-login.log';
 export type DeviceLoginInfo = { url: string; code: string };
 
 export const startDeviceLogin = async (sandbox: Sandbox): Promise<DeviceLoginInfo> => {
+  await sandbox.commands.run("pkill -f '[c]odex login' || true").catch(() => undefined);
   await sandbox.commands.run(`bash -c "rm -f ${DEVICE_LOG_PATH}"`);
   await sandbox.commands.run(
     `nohup codex login --device-auth > ${DEVICE_LOG_PATH} 2>&1 &`,
@@ -20,6 +21,9 @@ export const startDeviceLogin = async (sandbox: Sandbox): Promise<DeviceLoginInf
     await Bun.sleep(500);
   }
   const last = await sandbox.commands.run(`cat ${DEVICE_LOG_PATH} 2>/dev/null || echo EMPTY`);
+  if (/403 Forbidden/i.test(last.stdout)) {
+    throw new Error(`OpenAI rejected device auth from this sandbox with 403 Forbidden. log:\n${last.stdout}`);
+  }
   throw new Error(`codex login did not emit code within ${TIMEOUT_MS / 1000}s. log:\n${last.stdout}`);
 };
 
@@ -41,5 +45,5 @@ export const isLoggedIn = async (sandbox: Sandbox): Promise<boolean> => {
 };
 
 export const stopDeviceLogin = async (sandbox: Sandbox): Promise<void> => {
-  await sandbox.commands.run("pkill -f 'codex login' || true");
+  await sandbox.commands.run("pkill -f '[c]odex login' || true");
 };

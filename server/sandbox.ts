@@ -36,6 +36,11 @@ const bootstrapDone = new Set<string>();
 
 export const isBootstrapDone = (projectId: string): boolean => bootstrapDone.has(projectId);
 
+export const resetBootstrapForProject = (projectId: string): void => {
+  bootstrapInflight.delete(projectId);
+  bootstrapDone.delete(projectId);
+};
+
 export const ensureBootstrapForProject = (sandbox: Sandbox, projectId: string): Promise<void> => {
   if (bootstrapDone.has(projectId)) return Promise.resolve();
   const cached = bootstrapInflight.get(projectId);

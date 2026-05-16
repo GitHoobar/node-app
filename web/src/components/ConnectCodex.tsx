@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ExternalLink, X } from 'lucide-react';
-import { getLoginStatus, startLogin } from '../api';
+import { getLoginStatus, startLogin, type LoginStartResponse } from '../api';
 
 type Props = {
   projectId: string;
@@ -9,6 +9,30 @@ type Props = {
 };
 
 type Phase = 'preparing' | 'starting' | 'pending' | 'ok' | 'error';
+
+const LOGIN_START_CACHE_MS = 5000;
+const loginStartRequests = new Map<string, Promise<LoginStartResponse>>();
+
+const clearLoginStartRequest = (projectId: string, request: Promise<LoginStartResponse>) => {
+  globalThis.setTimeout(() => {
+    if (loginStartRequests.get(projectId) === request) {
+      loginStartRequests.delete(projectId);
+    }
+  }, LOGIN_START_CACHE_MS);
+};
+
+const startLoginOnce = (projectId: string): Promise<LoginStartResponse> => {
+  const cached = loginStartRequests.get(projectId);
+  if (cached) return cached;
+
+  const request = startLogin(projectId);
+  loginStartRequests.set(projectId, request);
+  request.then(
+    () => clearLoginStartRequest(projectId, request),
+    () => clearLoginStartRequest(projectId, request),
+  );
+  return request;
+};
 
 export const ConnectCodex = ({ projectId, onConnected, onClose }: Props) => {
   const [phase, setPhase] = useState<Phase>('starting');
@@ -22,7 +46,7 @@ export const ConnectCodex = ({ projectId, onConnected, onClose }: Props) => {
     const tryStart = async (): Promise<void> => {
       if (cancelled) return;
       try {
-        const res = await startLogin(projectId);
+        const res = await startLoginOnce(projectId);
         if (cancelled) return;
         if ('error' in res) {
           setError(res.error);

@@ -14,11 +14,15 @@ export const NodeInspector = () => {
   if (!found) return null;
   const node = found.node;
   const isRoot = node.id === ROOT_NODE_ID;
+  const title = isRoot ? 'App' : 'Page';
+  const promptPlaceholder = isRoot
+    ? 'Describe the shared app shell, navigation, style, and behavior...'
+    : 'Describe how this page should look and what it should contain...';
 
   return (
     <div className="flex flex-col gap-3 p-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Page</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">{title}</h2>
         {!isRoot && (
           <button
             onClick={() => remove(node.id)}
@@ -30,7 +34,7 @@ export const NodeInspector = () => {
         )}
       </div>
       <label className="flex flex-col gap-1 text-xs text-zinc-400">
-        Name {isRoot && <span className="text-amber-400">(home page)</span>}
+        Name {isRoot && <span className="text-amber-400">(global parent)</span>}
         <input
           className="rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm"
           value={node.name}
@@ -44,7 +48,7 @@ export const NodeInspector = () => {
           className="min-h-[200px] rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm leading-relaxed"
           value={node.prompt}
           onChange={(e) => update(node.id, { prompt: e.target.value })}
-          placeholder="Describe how this page should look and what it should contain…"
+          placeholder={promptPlaceholder}
         />
       </label>
     </div>

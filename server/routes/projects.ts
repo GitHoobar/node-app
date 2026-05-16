@@ -44,9 +44,13 @@ export const projectsRouter = new Hono()
     if (!p?.previewUrl) return c.json({ ready: false });
     try {
       const r = await fetch(p.previewUrl, { signal: AbortSignal.timeout(2500), redirect: 'manual' });
-      const html = r.status < 500 ? await r.text().catch(() => '') : '';
-      const isE2bErrorPage = html.includes('Closed Port Error') || html.includes('Connection refused');
-      return c.json({ ready: r.status >= 200 && r.status < 500 && !isE2bErrorPage });
+      const html = await r.text().catch(() => '');
+      const isE2bErrorPage =
+        html.includes('Closed Port Error') ||
+        html.includes('Connection refused') ||
+        html.includes('The sandbox is running but port is not open') ||
+        html.includes('The sandbox was not found');
+      return c.json({ ready: !isE2bErrorPage });
     } catch {
       return c.json({ ready: false });
     }

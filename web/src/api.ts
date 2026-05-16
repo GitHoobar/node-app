@@ -14,7 +14,11 @@ export const patchTree = (id: string, tree: TreeNode): Promise<unknown> =>
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ tree }),
-  }).then((r) => r.json());
+  }).then(async (r) => {
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof body.error === 'string' ? body.error : 'failed_to_save_tree');
+    return body;
+  });
 
 export const generate = (id: string): Promise<unknown> =>
   fetch(`/projects/${id}/generate`, { method: 'POST' }).then((r) => r.json());

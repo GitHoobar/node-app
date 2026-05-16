@@ -44,6 +44,7 @@ beforeEach(() => {
     codexConnected: false,
     loginModalOpen: false,
     bootstrap: 'unknown',
+    runStatus: { phase: 'idle', message: '' },
   });
 });
 
@@ -104,5 +105,36 @@ describe('app tree store', () => {
     expect(useApp.getState().tree!.children[0]!.children).toEqual([]);
     expect(useApp.getState().tree!.children[1]!.children.map((child) => child.id)).toEqual(['a1']);
     expect(useApp.getState().applyReparent(ROOT_NODE_ID, 'b')).toBe(false);
+  });
+
+  test('replaces the canonical tree from JSON edits and keeps valid selection', () => {
+    useApp.getState().setProject(makeProject());
+    useApp.getState().select('b');
+
+    const nextTree: TreeNode = {
+      id: ROOT_NODE_ID,
+      name: APP_ROOT_NAME,
+      prompt: 'next',
+      children: [{ id: 'b', name: 'B updated', prompt: 'updated', children: [] }],
+    };
+
+    useApp.getState().replaceTree(nextTree);
+
+    expect(useApp.getState().tree).toEqual(nextTree);
+    expect(useApp.getState().selectedNodeId).toBe('b');
+  });
+
+  test('resets selection when JSON edits remove the selected node', () => {
+    useApp.getState().setProject(makeProject());
+    useApp.getState().select('a1');
+
+    useApp.getState().replaceTree({
+      id: ROOT_NODE_ID,
+      name: APP_ROOT_NAME,
+      prompt: 'next',
+      children: [{ id: 'b', name: 'B', prompt: 'b', children: [] }],
+    });
+
+    expect(useApp.getState().selectedNodeId).toBe(ROOT_NODE_ID);
   });
 });

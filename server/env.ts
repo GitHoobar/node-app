@@ -8,5 +8,5 @@ export const env = {
   port: Number(process.env.PORT ?? 8787),
   e2bApiKey: required('E2B_API_KEY'),
   e2bTemplateId: process.env.E2B_TEMPLATE_ID ?? '',
-  databasePath: process.env.DATABASE_PATH ?? './data/node-app.db',
+  databaseUrl: process.env.DATABASE_URL ?? 'postgres://node_app:node_app@127.0.0.1:54329/node_app',
 };

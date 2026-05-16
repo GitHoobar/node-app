@@ -13,6 +13,18 @@ const CODEX_SDK_PACKAGE = '@openai/codex-sdk@0.130.0';
 const CODEX_SDK_RUNNER_DIR = '/tmp/node-app-codex-sdk-runner';
 const CODEX_SDK_RUNNER = `${CODEX_SDK_RUNNER_DIR}/run-codex.mjs`;
 
+const FRONTEND_DESIGN_SKILL_GUIDANCE = `Use the OpenAI frontend-design skill for this turn.
+
+When creating or changing UI, build production-grade working code with a clear visual point of view. Match the app's product context and user prompt, avoid generic AI-looking layouts, avoid default font/color choices when a more distinctive direction fits, and use typography, color, spacing, motion, and responsive behavior intentionally.
+
+Respect explicit constraints from the user and from this app. For incremental edits, keep changes focused and preserve unrelated routes, content, and build/config files unless the requested UI change requires touching them.`;
+
+export const withFrontendDesignSkill = (prompt: string): string =>
+  `${FRONTEND_DESIGN_SKILL_GUIDANCE}
+
+Task:
+${prompt}`;
+
 const RUNNER_SCRIPT = `import { Codex } from '@openai/codex-sdk';
 
 const readStdin = async () => {
@@ -165,7 +177,10 @@ export const runCodex = async (
   // E2B file writes cannot overwrite existing files, so each turn gets fresh runner input.
   const inputPath = `/tmp/codex-sdk-input-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`;
   await sandbox.commands.run(`bash -c "rm -f ${shellQuote(inputPath)}"`);
-  await sandbox.files.write(inputPath, JSON.stringify({ prompt, threadId, model: MODEL || null }));
+  await sandbox.files.write(
+    inputPath,
+    JSON.stringify({ prompt: withFrontendDesignSkill(prompt), threadId, model: MODEL || null }),
+  );
   const cmd = `bash -lc ${shellQuote(`node ${shellQuote(CODEX_SDK_RUNNER)} < ${shellQuote(inputPath)}`)}`;
   let buf = '';
   let stderr = '';

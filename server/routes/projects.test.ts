@@ -1,11 +1,8 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
+import postgres from 'postgres';
 import type { Project, TreeNode } from '@shared/types';
 import { APP_ROOT_NAME, ROOT_NODE_ID } from '@shared/types';
-import type { Database } from 'bun:sqlite';
 
 const fullTree: TreeNode = {
   id: ROOT_NODE_ID,
@@ -27,9 +24,8 @@ const prunedTree: TreeNode = {
   children: [{ id: 'keep', name: 'Keep', prompt: 'keep', children: [] }],
 };
 
-let tmp: string;
 let app: Hono;
-let db: Database;
+let dbModule: typeof import('../db.ts');
 const realFetch = globalThis.fetch;
 
 const jsonRequest = (path: string, method: string, body?: unknown) =>
@@ -45,21 +41,43 @@ const createProject = async (): Promise<Project> => {
   return response.json() as Promise<Project>;
 };
 
-beforeAll(async () => {
-  tmp = mkdtempSync(join(tmpdir(), 'node-app-projects-'));
-  process.env.E2B_API_KEY = 'test-key';
-  process.env.DATABASE_PATH = join(tmp, 'test.db');
+const ensureTestDatabase = async () => {
+  const admin = postgres('postgres://node_app:node_app@127.0.0.1:54329/postgres', { max: 1 });
+  try {
+    const rows = await admin<Array<{ exists: boolean }>>`
+      SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = 'node_app_test') AS exists
+    `;
+    if (!rows[0]?.exists) {
+      await admin.unsafe('CREATE DATABASE node_app_test OWNER node_app');
+    }
+  } finally {
+    await admin.end({ timeout: 1 });
+  }
+};
 
-  const dbModule = await import('../db.ts');
+beforeAll(async () => {
+  process.env.E2B_API_KEY = 'test-key';
+  if (!process.env.TEST_DATABASE_URL) {
+    await ensureTestDatabase();
+  }
+  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? 'postgres://node_app:node_app@127.0.0.1:54329/node_app_test';
+
+  dbModule = await import('../db.ts');
+  await dbModule.ensureDb();
   const { projectsRouter } = await import('./projects.ts');
-  db = dbModule.db;
   app = new Hono().route('/projects', projectsRouter);
 });
 
-afterAll(() => {
+beforeEach(async () => {
+  await dbModule.sql`DELETE FROM project_file_archives`;
+  await dbModule.sql`DELETE FROM projects`;
+});
+
+afterAll(async () => {
   globalThis.fetch = realFetch;
-  db.close();
-  rmSync(tmp, { recursive: true, force: true });
+  await dbModule.sql`DELETE FROM project_file_archives`;
+  await dbModule.sql`DELETE FROM projects`;
+  await dbModule.closeDb();
 });
 
 describe('project tree persistence', () => {
@@ -67,10 +85,10 @@ describe('project tree persistence', () => {
     const first = await createProject();
     const second = await createProject();
     const dbModule = await import('../db.ts');
-    dbModule.projects.setSandboxId(first.id, 'sandbox-one');
-    dbModule.projects.setPreviewUrl(first.id, 'https://one.example');
-    dbModule.projects.setSandboxId(second.id, 'sandbox-two');
-    dbModule.projects.setPreviewUrl(second.id, 'https://two.example');
+    await dbModule.projects.setSandboxId(first.id, 'sandbox-one');
+    await dbModule.projects.setPreviewUrl(first.id, 'https://one.example');
+    await dbModule.projects.setSandboxId(second.id, 'sandbox-two');
+    await dbModule.projects.setPreviewUrl(second.id, 'https://two.example');
 
     const response = await jsonRequest('/projects', 'GET');
     const list = (await response.json()) as Project[];
@@ -121,7 +139,7 @@ describe('project preview readiness', () => {
   test('treats reachable app errors as preview-ready so the iframe can show them', async () => {
     const project = await createProject();
     const dbModule = await import('../db.ts');
-    dbModule.projects.setPreviewUrl(project.id, 'https://preview.example');
+    await dbModule.projects.setPreviewUrl(project.id, 'https://preview.example');
     globalThis.fetch = (() => Promise.resolve(new Response('Internal Server Error', { status: 500 }))) as unknown as typeof fetch;
 
     const response = await jsonRequest(`/projects/${project.id}/preview/ready`, 'GET');
@@ -132,7 +150,7 @@ describe('project preview readiness', () => {
   test('keeps waiting while E2B reports a closed preview port', async () => {
     const project = await createProject();
     const dbModule = await import('../db.ts');
-    dbModule.projects.setPreviewUrl(project.id, 'https://preview.example');
+    await dbModule.projects.setPreviewUrl(project.id, 'https://preview.example');
     globalThis.fetch = (() => Promise.resolve(new Response('<h1>Closed Port Error</h1>', { status: 502 }))) as unknown as typeof fetch;
 
     const response = await jsonRequest(`/projects/${project.id}/preview/ready`, 'GET');
@@ -143,7 +161,7 @@ describe('project preview readiness', () => {
   test('keeps waiting while E2B reports the preview port is not open', async () => {
     const project = await createProject();
     const dbModule = await import('../db.ts');
-    dbModule.projects.setPreviewUrl(project.id, 'https://preview.example');
+    await dbModule.projects.setPreviewUrl(project.id, 'https://preview.example');
     globalThis.fetch = (() =>
       Promise.resolve(
         Response.json(
@@ -160,7 +178,7 @@ describe('project preview readiness', () => {
   test('keeps waiting while E2B reports the sandbox is gone', async () => {
     const project = await createProject();
     const dbModule = await import('../db.ts');
-    dbModule.projects.setPreviewUrl(project.id, 'https://preview.example');
+    await dbModule.projects.setPreviewUrl(project.id, 'https://preview.example');
     globalThis.fetch = (() =>
       Promise.resolve(
         Response.json({ sandboxId: 'stale', message: 'The sandbox was not found', code: 502 }, { status: 502 }),

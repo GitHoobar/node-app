@@ -16,7 +16,7 @@ const TreeNodeSchema: z.ZodType<TreeNode> = z.lazy(() =>
 );
 
 export const projectsRouter = new Hono()
-  .get('/', (c) => c.json(projects.list()))
+  .get('/', async (c) => c.json(await projects.list()))
   .post('/', async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const name = typeof body.name === 'string' && body.name ? body.name : 'Untitled Project';
@@ -32,15 +32,15 @@ export const projectsRouter = new Hono()
       previewUrl: null,
       updatedAt: Date.now(),
     };
-    projects.insert(project);
+    await projects.insert(project);
     return c.json(project);
   })
-  .get('/:id', (c) => {
-    const p = projects.get(c.req.param('id'));
+  .get('/:id', async (c) => {
+    const p = await projects.get(c.req.param('id'));
     return p ? c.json(p) : c.json({ error: 'not_found' }, 404);
   })
   .get('/:id/preview/ready', async (c) => {
-    const p = projects.get(c.req.param('id'));
+    const p = await projects.get(c.req.param('id'));
     if (!p?.previewUrl) return c.json({ ready: false });
     try {
       const r = await fetch(p.previewUrl, { signal: AbortSignal.timeout(2500), redirect: 'manual' });
@@ -60,8 +60,8 @@ export const projectsRouter = new Hono()
     const body = await c.req.json();
     const parsed = TreeNodeSchema.safeParse(body.tree);
     if (!parsed.success) return c.json({ error: 'invalid_tree' }, 400);
-    if (!projects.get(id)) return c.json({ error: 'not_found' }, 404);
-    projects.updateTree(id, parsed.data);
+    if (!(await projects.get(id))) return c.json({ error: 'not_found' }, 404);
+    await projects.updateTree(id, parsed.data);
     publish(id, { kind: 'log', level: 'info', message: 'tree updated' });
     return c.json({ ok: true });
   });

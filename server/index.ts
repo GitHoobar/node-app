@@ -12,9 +12,9 @@ app.use('*', logger());
 app.use('*', cors({ origin: '*' }));
 
 app.get('/health', (c) => c.json({ ok: true, ts: Date.now() }));
-app.route('/projects', projectsRouter);
-app.route('/projects', generateRouter);
-app.route('/projects', authRouter);
+app.route('/api/projects', projectsRouter);
+app.route('/api/projects', generateRouter);
+app.route('/api/projects', authRouter);
 
 console.info(`server listening on :${env.port}`);
 

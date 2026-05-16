@@ -39,7 +39,7 @@ const getOrStartDeviceLogin = (projectId: string): { request: Promise<LoginStart
 export const authRouter = new Hono()
   .post('/:id/login/start', async (c) => {
     const id = c.req.param('id');
-    if (!projects.get(id)) return c.json({ error: 'not_found' }, 404);
+    if (!(await projects.get(id))) return c.json({ error: 'not_found' }, 404);
     if (!isBootstrapDone(id)) {
       getSession(id).catch((e) => publish(id, { kind: 'log', level: 'error', message: String(e) }));
       return c.json({ status: 'preparing' });
@@ -57,7 +57,7 @@ export const authRouter = new Hono()
   })
   .get('/:id/login/status', async (c) => {
     const id = c.req.param('id');
-    if (!projects.get(id)) return c.json({ error: 'not_found' }, 404);
+    if (!(await projects.get(id))) return c.json({ error: 'not_found' }, 404);
     const { sandbox } = await getSession(id);
     const logged = await isLoggedIn(sandbox);
     if (logged) {

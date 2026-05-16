@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { MissingCodexThreadError, isMissingCodexThreadError, runWithMissingThreadFallback } from './codex';
+import {
+  MissingCodexThreadError,
+  isMissingCodexThreadError,
+  runWithMissingThreadFallback,
+  withFrontendDesignSkill,
+} from './codex';
 
 const staleThreadMessage =
   'thread/resume: thread/resume failed: no rollout found for thread id 019e3007-3e4a-7d12-a58b-34ef76b70335 (code -32600)';
@@ -56,5 +61,15 @@ describe('missing Codex thread handling', () => {
         },
       ),
     ).rejects.toThrow('network failed');
+  });
+});
+
+describe('frontend design skill prompt wrapper', () => {
+  test('prepends frontend-design guidance to every Codex prompt', () => {
+    const wrapped = withFrontendDesignSkill('Create a pricing page.');
+
+    expect(wrapped).toContain('Use the OpenAI frontend-design skill for this turn.');
+    expect(wrapped).toContain('production-grade working code');
+    expect(wrapped).toContain('Task:\nCreate a pricing page.');
   });
 });

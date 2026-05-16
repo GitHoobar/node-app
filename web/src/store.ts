@@ -1,11 +1,19 @@
 import { create } from 'zustand';
 import type { CodexEvent, Project, TreeNode } from '@shared/types';
 import { ROOT_NODE_ID } from '@shared/types';
-import { addChild, deleteNodes, reparent, updateNode } from './lib/tree-ops';
+import { addChild, deleteNodes, flattenWithParent, reparent, updateNode } from './lib/tree-ops';
 
 type EventLogItem = { id: number; ts: number; event: CodexEvent | { type: 'log'; level: string; message: string } };
 
 type BootstrapPhase = 'unknown' | 'pending' | 'done' | 'failed';
+type RunPhase = 'idle' | 'starting' | 'working' | 'finishing' | 'done' | 'error';
+
+export type RunStatus = {
+  phase: RunPhase;
+  message: string;
+};
+
+const idleRunStatus: RunStatus = { phase: 'idle', message: '' };
 
 type State = {
   project: Project | null;
@@ -18,8 +26,10 @@ type State = {
   codexConnected: boolean;
   loginModalOpen: boolean;
   bootstrap: BootstrapPhase;
+  runStatus: RunStatus;
 
   setProject: (p: Project) => void;
+  clearProject: () => void;
   updateProjectMetadata: (p: Project) => void;
   select: (id: string) => void;
   applyAddChild: (parentId: string) => void;
@@ -27,6 +37,7 @@ type State = {
   applyDelete: (id: string) => void;
   applyDeleteMany: (ids: ReadonlyArray<string>) => void;
   applyReparent: (sourceId: string, targetId: string) => boolean;
+  replaceTree: (tree: TreeNode) => void;
   bumpPreview: () => void;
   setPreviewUrl: (url: string) => void;
   appendEvent: (e: EventLogItem['event']) => void;
@@ -34,6 +45,7 @@ type State = {
   setCodexConnected: (c: boolean) => void;
   setLoginModalOpen: (o: boolean) => void;
   setBootstrap: (b: BootstrapPhase) => void;
+  setRunStatus: (status: RunStatus) => void;
 };
 
 let eid = 0;
@@ -49,6 +61,7 @@ export const useApp = create<State>((set, get) => ({
   codexConnected: false,
   loginModalOpen: false,
   bootstrap: 'unknown',
+  runStatus: idleRunStatus,
 
   setProject: (p) =>
     set({
@@ -61,6 +74,20 @@ export const useApp = create<State>((set, get) => ({
       codexConnected: false,
       loginModalOpen: false,
       bootstrap: 'unknown',
+      runStatus: idleRunStatus,
+    }),
+  clearProject: () =>
+    set({
+      project: null,
+      tree: null,
+      selectedNodeId: ROOT_NODE_ID,
+      previewUrl: null,
+      events: [],
+      generating: false,
+      codexConnected: false,
+      loginModalOpen: false,
+      bootstrap: 'unknown',
+      runStatus: idleRunStatus,
     }),
   updateProjectMetadata: (p) =>
     set((s) => {
@@ -106,6 +133,11 @@ export const useApp = create<State>((set, get) => ({
     set({ tree: next });
     return true;
   },
+  replaceTree: (tree) => {
+    const selectedId = get().selectedNodeId;
+    const selectedExists = flattenWithParent(tree).some(({ node }) => node.id === selectedId);
+    set({ tree, selectedNodeId: selectedExists ? selectedId : ROOT_NODE_ID });
+  },
   bumpPreview: () => set((s) => ({ previewKey: s.previewKey + 1 })),
   setPreviewUrl: (url) => set((s) => ({ previewUrl: url, project: s.project ? { ...s.project, previewUrl: url } : s.project })),
   appendEvent: (event) => set((s) => ({ events: [...s.events.slice(-300), { id: ++eid, ts: Date.now(), event }] })),
@@ -113,4 +145,5 @@ export const useApp = create<State>((set, get) => ({
   setCodexConnected: (c) => set({ codexConnected: c }),
   setLoginModalOpen: (o) => set({ loginModalOpen: o }),
   setBootstrap: (b) => set({ bootstrap: b }),
+  setRunStatus: (status) => set({ runStatus: status }),
 }));

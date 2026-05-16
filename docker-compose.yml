@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: node-app-postgres
+    environment:
+      POSTGRES_DB: node_app
+      POSTGRES_USER: node_app
+      POSTGRES_PASSWORD: node_app
+    ports:
+      - "54329:5432"
+    volumes:
+      - node_app_postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U node_app -d node_app"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  node_app_postgres_data:

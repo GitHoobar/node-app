@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { GitBranch, Network } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { AlertTriangle, Code2, GitBranch, Network } from 'lucide-react';
 import ReactFlow, {
   Background,
   Controls,
@@ -12,13 +12,15 @@ import ReactFlow, {
   type NodeChange,
   type NodeMouseHandler,
 } from 'reactflow';
+import type { TreeNode } from '@shared/types';
 import { useApp } from '../store';
 import { layoutObsidianTree, layoutTree } from '../lib/layout';
 import { nodeChangesWithoutBlockedDeletes, removableNodeIdsFromChanges } from '../lib/react-flow-node-changes';
+import { formatTreeJson, parseTreeJson } from '../lib/tree-json';
 import { ObsidianTreeNode } from './ObsidianTreeNode';
 import { PageNode } from './PageNode';
 
-type TreeViewMode = 'editor' | 'obsidian';
+type TreeViewMode = 'editor' | 'obsidian' | 'json';
 
 const editorNodeTypes = { page: PageNode };
 const obsidianNodeTypes = { obsidianTree: ObsidianTreeNode };
@@ -160,6 +162,87 @@ const ObsidianTreeCanvas = () => {
   );
 };
 
+const countTreeNodes = (tree: TreeNode): number =>
+  1 + tree.children.reduce((count, child) => count + countTreeNodes(child), 0);
+
+const JsonTreeEditor = () => {
+  const tree = useApp((s) => s.tree);
+  const replaceTree = useApp((s) => s.replaceTree);
+  const [draft, setDraft] = useState(() => (tree ? formatTreeJson(tree) : ''));
+  const [error, setError] = useState<string | null>(null);
+  const draftRef = useRef(draft);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  useEffect(() => {
+    if (!tree) {
+      draftRef.current = '';
+      setDraft('');
+      setError(null);
+      return;
+    }
+
+    const parsed = parseTreeJson(draftRef.current);
+    if (parsed.ok && formatTreeJson(parsed.tree) === formatTreeJson(tree)) return;
+
+    const nextDraft = formatTreeJson(tree);
+    draftRef.current = nextDraft;
+    setDraft(nextDraft);
+    setError(null);
+  }, [tree]);
+
+  const onChange = useCallback(
+    (event: ChangeEvent<HTMLTextAreaElement>) => {
+      const nextDraft = event.target.value;
+      draftRef.current = nextDraft;
+      setDraft(nextDraft);
+
+      const parsed = parseTreeJson(nextDraft);
+      if (!parsed.ok) {
+        setError(parsed.error);
+        return;
+      }
+
+      setError(null);
+      if (!tree || formatTreeJson(parsed.tree) !== formatTreeJson(tree)) {
+        replaceTree(parsed.tree);
+      }
+    },
+    [replaceTree, tree],
+  );
+
+  const nodeCount = useMemo(() => (tree ? countTreeNodes(tree) : 0), [tree]);
+
+  return (
+    <div className="flex h-full flex-col bg-zinc-950 px-4 pb-4 pt-16">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-2 font-mono text-xs text-zinc-400">
+          <Code2 size={14} className="text-emerald-300" />
+          tree.json
+        </div>
+        <div className={error ? 'text-xs font-medium text-red-300' : 'text-xs text-zinc-500'}>
+          {error ? 'invalid' : `${nodeCount} nodes`}
+        </div>
+      </div>
+      <textarea
+        value={draft}
+        onChange={onChange}
+        spellCheck={false}
+        aria-label="Tree JSON"
+        className="min-h-0 flex-1 resize-none rounded-md border border-zinc-800 bg-zinc-950 p-4 font-mono text-xs leading-5 text-zinc-100 outline-none shadow-inner shadow-black/30 caret-emerald-300 selection:bg-emerald-400/20 focus:border-emerald-600"
+      />
+      {error && (
+        <div className="mt-2 flex items-start gap-2 rounded-md border border-red-900/70 bg-red-950/40 px-3 py-2 text-xs text-red-200">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span className="break-words">{error}</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const TreeEditor = () => {
   const [mode, setMode] = useState<TreeViewMode>('editor');
 
@@ -184,8 +267,23 @@ export const TreeEditor = () => {
         >
           <Network size={13} /> Tree
         </button>
+        <button
+          type="button"
+          className={mode === 'json' ? 'active' : ''}
+          onClick={() => setMode('json')}
+          aria-pressed={mode === 'json'}
+          title="JSON tree"
+        >
+          <Code2 size={13} /> JSON
+        </button>
       </div>
-      <ReactFlowProvider key={mode}>{mode === 'editor' ? <EditorCanvas /> : <ObsidianTreeCanvas />}</ReactFlowProvider>
+      {mode === 'json' ? (
+        <JsonTreeEditor />
+      ) : (
+        <ReactFlowProvider key={mode}>
+          {mode === 'editor' ? <EditorCanvas /> : <ObsidianTreeCanvas />}
+        </ReactFlowProvider>
+      )}
     </div>
   );
 };

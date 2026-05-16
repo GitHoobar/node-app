@@ -5,7 +5,7 @@ SaaS website generator. Users design a site as a **tree of pages**: every node i
 ## Stack
 
 - **Runtime:** Bun
-- **Server:** Hono + bun:sqlite
+- **Server:** Hono + Postgres
 - **Frontend:** Vite + React + Tailwind + React Flow (Dagre auto-layout)
 - **Sandbox:** E2B with a custom `node-app-bun` template (Bun + Next.js 16 + Tailwind + shadcn + Codex)
 - **Agent:** `@openai/codex-sdk`, run inside the E2B sandbox so Codex edits `/home/user`
@@ -14,9 +14,10 @@ SaaS website generator. Users design a site as a **tree of pages**: every node i
 
 1. Install Bun (https://bun.sh) and the E2B CLI (`bun add -g @e2b/cli`).
 2. `cp .env.example .env` and fill in `E2B_API_KEY`.
-3. `bun install`
-4. Build the sandbox template once: `bun run --cwd e2b build`
-5. `bun run dev:server` and `bun run dev:web` in two terminals.
+3. `docker compose up -d postgres`
+4. `bun install`
+5. Build the sandbox template once: `bun run --cwd e2b build`
+6. `bun run dev:server` and `bun run dev:web` in two terminals.
 
 ## Layout
 

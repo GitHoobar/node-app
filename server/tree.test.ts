@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { TreeNode } from '@shared/types';
 import { APP_ROOT_NAME, ROOT_NODE_ID } from '@shared/types';
-import { compileTree, compileTreeToPrompt } from './tree';
+import { compileTree, compileTreeToPrompt, diffTrees, treeDiffHasChanges } from './tree';
 
 const makeTree = (): TreeNode => ({
   id: ROOT_NODE_ID,
@@ -52,5 +52,29 @@ describe('compileTreeToPrompt', () => {
     expect(prompt).toContain('- `/home`');
     expect(prompt).toContain('- `/settings`');
     expect(prompt).not.toContain('- `/`');
+  });
+
+  test('describes only incremental changes when a previous generated tree exists', () => {
+    const previous = makeTree();
+    const current = makeTree();
+    current.children[0]!.children.push({ id: 'billing', name: 'Billing', prompt: 'Billing page.', children: [] });
+
+    const prompt = compileTreeToPrompt(current, { previousTree: previous, hasExistingApp: true });
+
+    expect(prompt).toContain('This is an incremental update request for an app that already exists.');
+    expect(prompt).toContain('Added pages:');
+    expect(prompt).toContain('Create `/billing` (Billing) - Billing page.');
+    expect(prompt).toContain('Update `/home`: navigation links changed');
+    expect(prompt).toContain('Unchanged routes to preserve');
+    expect(prompt).toContain('`/reports`, `/settings`');
+  });
+});
+
+describe('diffTrees', () => {
+  test('detects when there are no tree changes since the last generation', () => {
+    const diff = diffTrees(makeTree(), makeTree());
+
+    expect(treeDiffHasChanges(diff)).toBe(false);
+    expect(diff.unchangedPages.map((page) => page.route)).toEqual(['/home', '/reports', '/settings']);
   });
 });
